@@ -856,19 +856,35 @@ var kernel = execMain(function() {
 				document.title = '[UNSAFE] ' + document.title;
 			}
 			if (navigator.wakeLock && navigator.wakeLock.request) {
+				var wakeLock = null;
+				var wakeLockPending = false;
 				var requestWakeLock = function () {
-					if (document.visibilityState != 'visible') {
+					if (document.visibilityState != 'visible' || wakeLockPending || (wakeLock !== null && !wakeLock.released)) {
 						return;
 					}
+					wakeLockPending = true;
 					navigator.wakeLock.request('screen').then(function (lock) {
+						wakeLockPending = false;
+						wakeLock = lock;
 						DEBUG && console.log('[ui]', 'Screen Wake Lock is active');
 						lock.addEventListener('release', function () {
 							DEBUG && console.log('[ui]', 'Screen Wake Lock is released');
+							if (wakeLock === lock) {
+								wakeLock = null;
+							}
 						});
+					}, function (err) {
+						wakeLockPending = false;
+						DEBUG && console.log('[ui]', 'Screen Wake Lock request failed', err);
 					});
 				};
 				requestWakeLock();
 				document.addEventListener('visibilitychange', requestWakeLock);
+				regListener('ui', 'timerStatus', function (signal, value) {
+					if (value != -1) {
+						requestWakeLock();
+					}
+				});
 			}
 		});
 
