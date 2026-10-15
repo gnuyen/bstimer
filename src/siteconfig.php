@@ -23,6 +23,12 @@
  *   	'userdata_allow_custom_ids' => true,
  *   	'userdata_max_item_bytes' => 1048576,
  *   	'userdata_max_items' => 200,
+ *   	'sync_dsn' => '',
+ *   	'sync_db_user' => '',
+ *   	'sync_db_password' => '',
+ *   	'sync_table_prefix' => 'bstimer_sync_',
+ *   	'sync_keep_recent' => 20,
+ *   	'sync_keep_days' => 120,
  *   ];
  */
 
@@ -60,6 +66,16 @@ function bstimer_config(): array
 		'userdata_max_item_bytes' => 1048576,
 		// most ids in one request
 		'userdata_max_items' => 200,
+		// PDO DSN for bsTimer sync; empty means use the userdata database
+		'sync_dsn' => '',
+		'sync_db_user' => '',
+		'sync_db_password' => '',
+		// prefix for the sync tables (keys, versions, slices)
+		'sync_table_prefix' => 'bstimer_sync_',
+		// number of newest versions always kept
+		'sync_keep_recent' => 20,
+		// additionally keep the newest version of each UTC day within this many days
+		'sync_keep_days' => 120,
 	];
 
 	$paths = [];
