@@ -34,6 +34,7 @@ bstimer/syncengine.js \
 bstimer/sync.js \
 logohint.js \
 bstimer/appupdate.js \
+bstimer/keepawake.js \
 timer.js \
 timer/input.js \
 timer/stackmat.js \

@@ -37,6 +37,7 @@
   <script type="text/javascript" src="js/bstimer/sync.js"></script>
   <script type="text/javascript" src="js/logohint.js"></script>
   <script type="text/javascript" src="js/bstimer/appupdate.js"></script>
+  <script type="text/javascript" src="js/bstimer/keepawake.js"></script>
   <script type="text/javascript" src="js/timer.js"></script>
   <script type="text/javascript" src="js/timer/input.js"></script>
   <script type="text/javascript" src="js/timer/stackmat.js"></script>
