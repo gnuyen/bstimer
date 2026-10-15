@@ -62,7 +62,7 @@ var onlinecomp = execMain(function() {
 
 	function updateCompList() {
 		refreshButton.val('...');
-		$.post('https://cstimer.net/comp.php', {
+		$.post(siteConfig['dataServer'] + 'comp.php', {
 			'action': 'list'
 		}, function(value) {
 			pathList = [];
@@ -103,7 +103,7 @@ var onlinecomp = execMain(function() {
 
 	function fetchScramble() {
 		var comppath = getCompPath();
-		$.post('https://cstimer.net/comp.php', {
+		$.post(siteConfig['dataServer'] + 'comp.php', {
 			'action': 'scramble',
 			'comp': comppath[0],
 			'path': comppath[1]
@@ -241,7 +241,7 @@ var onlinecomp = execMain(function() {
 			return;
 		}
 		var comppath = getCompPath();
-		$.post('https://cstimer.net/comp.php', {
+		$.post(siteConfig['dataServer'] + 'comp.php', {
 			'action': 'submit',
 			'comp': comppath[0],
 			'path': comppath[1],
@@ -267,7 +267,7 @@ var onlinecomp = execMain(function() {
 		resetProgress(false, true);
 		var comppath = getCompPath();
 		var showAnonym = anonymInput.prop('checked') ? 1 : 0;
-		$.post('https://cstimer.net/comp.php', {
+		$.post(siteConfig['dataServer'] + 'comp.php', {
 			'action': 'result',
 			'comp': comppath[0],
 			'path': comppath[1],
@@ -353,7 +353,7 @@ var onlinecomp = execMain(function() {
 		if (!uid) {
 			return;
 		}
-		$.post('https://cstimer.net/comp.php', {
+		$.post(siteConfig['dataServer'] + 'comp.php', {
 			'action': 'myresult',
 			'uid': uid
 		}, function(value) {

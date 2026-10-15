@@ -24,7 +24,7 @@ var battle = execMain(function() {
 			}
 			return new Promise(function(resolve, reject) {
 				toResolves.push(resolve);
-				socket = new WebSocket('wss://cstimer.net/ws20230409');
+				socket = new WebSocket(siteConfig['battleSocket']);
 				socket.onopen = onopen;
 				socket.onclose = onclose;
 				socket.onerror = onerror;

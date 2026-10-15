@@ -1,8 +1,9 @@
 "use strict";
 
 var exportFunc = execMain(function() {
-	var wcaLoginUrl = 'https://www.worldcubeassociation.org/oauth/authorize?client_id=63a89d6694b1ea2d7b7cbbe174939a4d2adf8dd26e69acacd1280af7e7727554&response_type=code&scope=public&redirect_uri=' + encodeURI(location.href.split('?')[0]);
-	var gglLoginUrl = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=738060786798-octf9tngnn8ibd6kau587k34au263485.apps.googleusercontent.com&response_type=token&scope=https://www.googleapis.com/auth/drive.appdata&redirect_uri=' + encodeURI(location.href.split('?')[0]);
+	var pageUrl = encodeURI(location.href.split('?')[0]);
+	var wcaLoginUrl = 'https://www.worldcubeassociation.org/oauth/authorize?client_id=' + siteConfig['wcaClientId'] + '&response_type=code&scope=public&redirect_uri=' + (siteConfig['wcaRedirectUri'] || pageUrl);
+	var gglLoginUrl = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=' + siteConfig['googleClientId'] + '&response_type=token&scope=https://www.googleapis.com/auth/drive.appdata&redirect_uri=' + (siteConfig['googleRedirectUri'] || pageUrl);
 
 	var exportDiv = $('<div />');
 	var exportTable = $('<table class="expOauth expUpDown">');
@@ -176,7 +177,7 @@ var exportFunc = execMain(function() {
 			if (ids.length == 0) {
 				prepass = Promise.resolve({'retcode': 0, 'datas': []});
 			} else {
-				prepass = $.ppost('https://cstimer.net/userdata2.php', {
+				prepass = $.ppost(siteConfig['dataServer'] + 'userdata2.php', {
 					'id': id,
 					'exists': ids.join(',')
 				}, 'json');
@@ -195,7 +196,7 @@ var exportFunc = execMain(function() {
 					ids.push(key);
 					datas.push(slices[key]);
 				}
-				return $.ppost('https://cstimer.net/userdata2.php', {
+				return $.ppost(siteConfig['dataServer'] + 'userdata2.php', {
 					'id': id,
 					'ids': ids.join(','),
 					'datas': datas.join(',')
@@ -259,7 +260,7 @@ var exportFunc = execMain(function() {
 				}
 			}
 			target.html('Import Data...');
-			return $.ppost('https://cstimer.net/userdata2.php', {
+			return $.ppost(siteConfig['dataServer'] + 'userdata2.php', {
 				'id': id,
 				'offset': idx - 1
 			}, 'json').then(dataCallback);
@@ -306,7 +307,7 @@ var exportFunc = execMain(function() {
 					if (reqKeys.length == 0) {
 						return {'retcode':0,'datas':{}};
 					}
-					return $.ppost('https://cstimer.net/userdata2.php', {
+					return $.ppost(siteConfig['dataServer'] + 'userdata2.php', {
 						'id': id,
 						'ids': reqKeys.join(',')
 					}, 'json');
@@ -333,7 +334,7 @@ var exportFunc = execMain(function() {
 
 		var jobs = Promise.resolve({'data':1});
 		if (kernel.getProp('expp')) {
-			jobs = $.ppost('https://cstimer.net/userdata2.php', {
+			jobs = $.ppost(siteConfig['dataServer'] + 'userdata2.php', {
 				'id': id,
 				'cnt': 1
 			}, 'json');
