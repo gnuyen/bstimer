@@ -7,14 +7,43 @@ const BSTIMER_UD_MISMATCH = '{"retcode":400,"reason":"slice hash mismatch"}';
 const BSTIMER_UD_TOO_LARGE = '{"retcode":413,"reason":"too large"}';
 const BSTIMER_UD_TOO_MANY = '{"retcode":413,"reason":"too many ids"}';
 
-function bstimer_userdata(array $post, PDO $db, string $table, array $limits = []): string
+function bstimer_userdata_ensure_history(PDO $db, string $historyTable): void
+{
+	// Run CREATE TABLE at most once per connection: on MySQL it commits any open
+	// transaction, even when the table already exists.
+	static $done = [];
+	$key = spl_object_id($db) . ':' . $historyTable;
+	if (isset($done[$key])) {
+		return;
+	}
+	$driver = $db->getAttribute(PDO::ATTR_DRIVER_NAME);
+	$quote = ($driver === 'mysql') ? '`' : '"';
+	$h = $quote . $historyTable . $quote;
+	if ($driver === 'mysql') {
+		$sql = "CREATE TABLE IF NOT EXISTS $h (id BIGINT AUTO_INCREMENT PRIMARY KEY, username VARCHAR(255) NOT NULL, save_data LONGTEXT, value_hash CHAR(32), upload_time TIMESTAMP NULL, replaced_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, INDEX (username)) DEFAULT CHARSET=utf8mb4";
+	} else {
+		$sql = "CREATE TABLE IF NOT EXISTS $h (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, save_data TEXT, value_hash TEXT, upload_time TEXT, replaced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)";
+	}
+	$db->exec($sql);
+	$done[$key] = true;
+}
+
+function bstimer_userdata(array $post, PDO $db, string $table, array $limits = [], string $historyTable = ''): string
 {
 	if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) {
 		throw new InvalidArgumentException('invalid table name');
 	}
+	if ($historyTable === '') {
+		$historyTable = $table . '_history';
+	}
+	if (!preg_match('/^[A-Za-z0-9_]+$/', $historyTable)) {
+		throw new InvalidArgumentException('invalid history table name');
+	}
+
 	$driver = $db->getAttribute(PDO::ATTR_DRIVER_NAME);
 	$quote = ($driver === 'mysql') ? '`' : '"';
 	$t = $quote . $table . $quote;
+	$ht = $quote . $historyTable . $quote;
 
 	// limits with defaults
 	$allowCustom = (bool)($limits['allow_custom_ids'] ?? true);
@@ -115,6 +144,24 @@ function bstimer_userdata(array $post, PDO $db, string $table, array $limits = [
 		try {
 			// skip rewriting an existing slice (same content anyway)
 			if (!($isSlice($id) && $exists($id))) {
+				// handle history for main ids
+				if (!$isSlice($id)) {
+					$stmt = $db->prepare("SELECT save_data, value_hash, upload_time FROM $t WHERE username = ?");
+					$stmt->execute([$id]);
+					$row = $stmt->fetch(PDO::FETCH_ASSOC);
+					if ($row !== false) {
+						$newHash = md5($data);
+						if ($row['value_hash'] !== $newHash) {
+							try {
+								bstimer_userdata_ensure_history($db, $historyTable);
+								$stmtIns = $db->prepare("INSERT INTO $ht (username, save_data, value_hash, upload_time) VALUES (?, ?, ?, ?)");
+								$stmtIns->execute([$id, $row['save_data'], $row['value_hash'], $row['upload_time']]);
+							} catch (Exception $e) {
+								error_log('bsTimer userdata2: history failed: ' . $e->getMessage());
+							}
+						}
+					}
+				}
 				$upsert($id, $data);
 			}
 			return '{"retcode":0}';
@@ -143,10 +190,35 @@ function bstimer_userdata(array $post, PDO $db, string $table, array $limits = [
 			}
 		}
 		try {
+			// Create the history table before the transaction: on MySQL, CREATE TABLE
+			// implicitly commits an open transaction.
+			try {
+				bstimer_userdata_ensure_history($db, $historyTable);
+			} catch (Exception $e) {
+				error_log('bsTimer userdata2: history failed: ' . $e->getMessage());
+			}
 			$db->beginTransaction();
 			foreach ($ids as $i => $id) {
 				// skip rewriting an existing slice (same content anyway)
 				if (!($isSlice($id) && $exists($id))) {
+					// handle history for main ids
+					if (!$isSlice($id)) {
+						$stmt = $db->prepare("SELECT save_data, value_hash, upload_time FROM $t WHERE username = ?");
+						$stmt->execute([$id]);
+						$row = $stmt->fetch(PDO::FETCH_ASSOC);
+						if ($row !== false) {
+							$newHash = md5($datas[$i]);
+							if ($row['value_hash'] !== $newHash) {
+								try {
+									bstimer_userdata_ensure_history($db, $historyTable);
+									$stmtIns = $db->prepare("INSERT INTO $ht (username, save_data, value_hash, upload_time) VALUES (?, ?, ?, ?)");
+									$stmtIns->execute([$id, $row['save_data'], $row['value_hash'], $row['upload_time']]);
+								} catch (Exception $e) {
+									error_log('bsTimer userdata2: history failed: ' . $e->getMessage());
+								}
+							}
+						}
+					}
 					$upsert($id, $datas[$i]);
 				}
 			}
@@ -240,5 +312,5 @@ if (!defined('BSTIMER_TEST')) {
 		'max_item_bytes' => $c['userdata_max_item_bytes'],
 		'max_items' => $c['userdata_max_items'],
 	];
-	echo bstimer_userdata($_POST, $db, $c['userdata_table'], $limits);
+	echo bstimer_userdata($_POST, $db, $c['userdata_table'], $limits, $c['userdata_history_table']);
 }

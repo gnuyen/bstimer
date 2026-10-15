@@ -19,6 +19,7 @@
  *   	'userdata_db_user' => 'cstimer',
  *   	'userdata_db_password' => 'secret',
  *   	'userdata_table' => 'my_cstimer_saves',
+ *   	'userdata_history_table' => '',
  *   	'userdata_allow_custom_ids' => true,
  *   	'userdata_max_item_bytes' => 1048576,
  *   	'userdata_max_items' => 200,
@@ -51,6 +52,8 @@ function bstimer_config(): array
 		'userdata_db_password' => '',
 		// columns: username (primary key), save_data, value_hash, upload_time
 		'userdata_table' => 'my_cstimer_saves',
+		// History of overwritten saves (every version is kept). Empty means '<userdata_table>_history'.
+		'userdata_history_table' => '',
 		// false: main rows must be 64-hex WCA tokens; typed ids (guessable, no password) are refused
 		'userdata_allow_custom_ids' => true,
 		// largest single stored value

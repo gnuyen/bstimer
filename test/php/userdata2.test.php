@@ -224,6 +224,93 @@ $r = json_decode(bstimer_userdata(['ids' => 'a,b,c', 'datas' => 'x,y,z'], $db, '
 ok($r['retcode'] === 413 && $r['reason'] === 'too many ids', 'max_items batch set 3 returns 413 too many ids');
 ok((int)$db->query('SELECT COUNT(*) FROM my_cstimer_saves')->fetchColumn() === 0, 'max_items batch set writes nothing');
 
+// --- history tests ---
+// first save of 'bob' -> no history rows
+$db = freshDb();
+bstimer_userdata(['id' => 'bob', 'data' => 'v1'], $db, 'my_cstimer_saves');
+$histCount = 0;
+try {
+	$histCount = (int)$db->query('SELECT COUNT(*) FROM my_cstimer_saves_history')->fetchColumn();
+} catch (Exception $e) {
+	// table might not exist
+}
+ok($histCount === 0, 'first save creates no history rows');
+
+// saving 'bob' again with different data -> 1 history row
+bstimer_userdata(['id' => 'bob', 'data' => 'v2'], $db, 'my_cstimer_saves');
+$histCount = (int)$db->query('SELECT COUNT(*) FROM my_cstimer_saves_history')->fetchColumn();
+ok($histCount === 1, 'second save creates 1 history row');
+$stmt = $db->query('SELECT save_data, value_hash, username FROM my_cstimer_saves_history ORDER BY id');
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+ok($row['save_data'] === 'v1', 'history row has old save_data');
+ok($row['value_hash'] === md5('v1'), 'history row has old value_hash');
+ok($row['username'] === 'bob', 'history row has correct username');
+
+// saving 'bob' a third time with different data -> 2 history rows
+bstimer_userdata(['id' => 'bob', 'data' => 'v3'], $db, 'my_cstimer_saves');
+$histCount = (int)$db->query('SELECT COUNT(*) FROM my_cstimer_saves_history')->fetchColumn();
+ok($histCount === 2, 'third save creates 2 history rows');
+$stmt = $db->query('SELECT save_data FROM my_cstimer_saves_history ORDER BY id');
+$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+ok($rows[0]['save_data'] === 'v1' && $rows[1]['save_data'] === 'v2', 'history rows in order old1, old2');
+
+// re-saving identical data -> no new history row
+bstimer_userdata(['id' => 'bob', 'data' => 'v3'], $db, 'my_cstimer_saves');
+$histCount = (int)$db->query('SELECT COUNT(*) FROM my_cstimer_saves_history')->fetchColumn();
+ok($histCount === 2, 'identical re-save creates no new history row');
+
+// slices never create history
+$db = freshDb();
+$sh = hash('sha256', 'slice_data');
+$sliceId = 'slice' . $sh;
+bstimer_userdata(['ids' => $sliceId, 'datas' => 'slice_data'], $db, 'my_cstimer_saves');
+bstimer_userdata(['ids' => $sliceId, 'datas' => 'slice_data'], $db, 'my_cstimer_saves');
+$histCount = 0;
+try {
+	$histCount = (int)$db->query('SELECT COUNT(*) FROM my_cstimer_saves_history')->fetchColumn();
+} catch (Exception $e) {
+}
+ok($histCount === 0, 'slices never create history');
+
+// batch set containing main id 'carol' (previously saved) and a new slice -> 1 history row for carol
+$db = freshDb();
+bstimer_userdata(['id' => 'carol', 'data' => 'old_carol'], $db, 'my_cstimer_saves');
+$sh2 = hash('sha256', 'new_slice');
+$sliceId2 = 'slice' . $sh2;
+bstimer_userdata(['ids' => 'carol,' . $sliceId2, 'datas' => 'new_carol,new_slice'], $db, 'my_cstimer_saves');
+$histCount = (int)$db->query('SELECT COUNT(*) FROM my_cstimer_saves_history')->fetchColumn();
+ok($histCount === 1, 'batch set with main id and slice creates 1 history row');
+$stmt = $db->query('SELECT username, save_data FROM my_cstimer_saves_history');
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+ok($row['username'] === 'carol' && $row['save_data'] === 'old_carol', 'history row is for carol with old data');
+
+// explicit history table name argument 'custom_hist' is used
+$db = freshDb();
+bstimer_userdata(['id' => 'dave', 'data' => 'v1'], $db, 'my_cstimer_saves', [], 'custom_hist');
+bstimer_userdata(['id' => 'dave', 'data' => 'v2'], $db, 'my_cstimer_saves', [], 'custom_hist');
+$histCount = (int)$db->query('SELECT COUNT(*) FROM custom_hist')->fetchColumn();
+ok($histCount === 1, 'explicit history table name is used');
+
+// invalid history table name throws InvalidArgumentException
+$db = freshDb();
+$threw = false;
+try {
+	bstimer_userdata(['id' => 'x', 'data' => 'y'], $db, 'my_cstimer_saves', [], 'bad-hist');
+} catch (InvalidArgumentException $e) {
+	$threw = true;
+}
+ok($threw, 'invalid history table name throws InvalidArgumentException');
+
+// when the history insert fails, the main save still works
+$db = freshDb();
+$db->exec('CREATE TABLE bad_hist (x INTEGER)');
+bstimer_userdata(['id' => 'eve', 'data' => 'v1'], $db, 'my_cstimer_saves', [], 'bad_hist');
+$r = json_decode(bstimer_userdata(['id' => 'eve', 'data' => 'v2'], $db, 'my_cstimer_saves', [], 'bad_hist'), true);
+ok($r['retcode'] === 0, 'history insert failure does not block main save');
+$stmt = $db->prepare('SELECT save_data FROM my_cstimer_saves WHERE username = ?');
+$stmt->execute(['eve']);
+ok($stmt->fetchColumn() === 'v2', 'main row has new data despite history failure');
+
 if ($failures > 0) {
 	echo "# FAILURES\n";
 	exit(1);
