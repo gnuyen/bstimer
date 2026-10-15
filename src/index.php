@@ -31,6 +31,10 @@
   <script type="text/javascript" src="js/lib/puzzlefactory.js"></script>
   <script type="text/javascript" src="js/kernel.js"></script>
   <script type="text/javascript" src="js/export.js"></script>
+  <script type="text/javascript" src="js/bstimer/syncmerge.js"></script>
+  <script type="text/javascript" src="js/bstimer/syncdata.js"></script>
+  <script type="text/javascript" src="js/bstimer/syncengine.js"></script>
+  <script type="text/javascript" src="js/bstimer/sync.js"></script>
   <script type="text/javascript" src="js/logohint.js"></script>
   <script type="text/javascript" src="js/bstimer/appupdate.js"></script>
   <script type="text/javascript" src="js/timer.js"></script>

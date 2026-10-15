@@ -28,6 +28,10 @@ lib/cubeutil.js \
 lib/puzzlefactory.js \
 kernel.js \
 export.js \
+bstimer/syncmerge.js \
+bstimer/syncdata.js \
+bstimer/syncengine.js \
+bstimer/sync.js \
 logohint.js \
 bstimer/appupdate.js \
 timer.js \
