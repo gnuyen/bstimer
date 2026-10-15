@@ -11,7 +11,7 @@ isolation = --isolation_mode IIFE
 advanced = -O ADVANCED
 debugoff = --define='DEBUGM=false' --define='DEBUGWK=false'
 timerSrc = $(addprefix $(src)/js/, \
-config.js \
+bstimer/config.js \
 lib/utillib.js \
 lib/sha256.js \
 lib/isaac.js \
@@ -29,7 +29,7 @@ lib/puzzlefactory.js \
 kernel.js \
 export.js \
 logohint.js \
-appupdate.js \
+bstimer/appupdate.js \
 timer.js \
 timer/input.js \
 timer/stackmat.js \

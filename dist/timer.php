@@ -23,8 +23,8 @@
 <?php include('lang/langDet.php');?>
   <link rel='stylesheet' type='text/css' href='css/style.css'>
   <script type="text/javascript" src="js/jquery.min.js"></script>
-<?php if (file_exists(__DIR__ . '/js/config.local.js')) { ?>
-  <script type="text/javascript" src="js/config.local.js"></script>
+<?php if (file_exists(__DIR__ . '/js/bstimer/config.local.js')) { ?>
+  <script type="text/javascript" src="js/bstimer/config.local.js"></script>
 <?php } ?>
   <script type="text/javascript" src="js/cstimer.js"></script>
 <?php include('baidutongji.php') ?>

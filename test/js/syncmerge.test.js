@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const SRC = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'js', 'lib', 'syncmerge.js'), 'utf8');
+const SRC = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'js', 'bstimer', 'syncmerge.js'), 'utf8');
 function load() {
 	const ctx = {};
 	ctx.self = ctx;

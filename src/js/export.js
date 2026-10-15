@@ -42,9 +42,6 @@ var exportFunc = execMain(function() {
 			}))
 		)
 	);
-	if (!siteConfig['customIdSync']) {
-		inServ.closest('tr').remove();
-	}
 
 	function updateExpString() {
 		return storage.exportAll().then(function(exportObj) {
@@ -717,6 +714,7 @@ var exportFunc = execMain(function() {
 					$('<td>').append(inServGGL),
 					$('<td>').append(outServGGL)))),
 			exportTable);
+		window['bsSync'] && window['bsSync']['attach'](exportDiv, inServ.closest('tr')); // bsTimer: sync section
 		if (window.FileReader && window.Blob) {
 			var reader = new FileReader();
 			reader.onload = importData;

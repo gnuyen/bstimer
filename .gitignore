@@ -3,8 +3,8 @@
 cstimer.iml
 
 # Per-site settings and local deploy tooling (see BSTIMER.md)
-src/js/config.local.js
-dist/js/config.local.js
+src/js/bstimer/config.local.js
+dist/js/bstimer/config.local.js
 deploy.env
 deploy.sh
 deploy.test.sh
