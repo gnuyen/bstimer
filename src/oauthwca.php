@@ -1,12 +1,15 @@
 <?php
 
 require 'WcaOauth.php';
+require_once __DIR__ . '/siteconfig.php';
 
-$applicationId = '63a89d6694b1ea2d7b7cbbe174939a4d2adf8dd26e69acacd1280af7e7727554';
-$applicationSecret = '0000000000000000000000000000000000000000000000000000000000000000';
-$csTimerTokenSalt = '0000000000000000000000000000000000000000000000000000000000000000';
+// Settings come from the site settings file (see siteconfig.php), not from this file.
+$config = bstimer_config();
+$applicationId = $config['wca_application_id'];
+$applicationSecret = $config['wca_application_secret'];
+$csTimerTokenSalt = $config['wca_token_salt'];
 
-$validUrlRe = '/^(https?:\/\/([^\/]*\.)?cstimer\.net\/(new\/|src\/)?(timer\.php)?)(\?.*)?$/i';
+$validUrlRe = $config['wca_referrer_pattern'];
 $matches = array();
 
 if (preg_match($validUrlRe, $_SERVER['HTTP_REFERER'], $matches) == 0) {

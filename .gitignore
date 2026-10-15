@@ -8,3 +8,4 @@ dist/js/config.local.js
 deploy.env
 deploy.sh
 deploy.test.sh
+src/config.local.php
