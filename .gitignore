@@ -2,7 +2,9 @@
 /.idea
 cstimer.iml
 
-# Per-site settings and deploy target (see BSTIMER.md)
+# Per-site settings and local deploy tooling (see BSTIMER.md)
 src/js/config.local.js
 dist/js/config.local.js
 deploy.env
+deploy.sh
+deploy.test.sh
