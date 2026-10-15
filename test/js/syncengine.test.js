@@ -250,3 +250,99 @@ test("settings 'settings' syncs shared settings but not device-local ones", asyn
 	assert.equal(b.properties.input, 'k');
 	assert.ok(!('input' in cl.data.properties));
 });
+
+// ---------- safeguards ----------
+
+function many(n, start = 1) { return Array.from({ length: n }, (_, i) => solve(start + i)); }
+
+test('deletion guard: a sync that would remove many solves asks first; declining writes nothing', async () => {
+	const cl = cloud();
+	const dev = device([{ name: 'A', solves: many(100) }]);
+	await sync(dev, cl);
+	const cloudBefore = plain(cl.data);
+	const stateBefore = plain(dev.state);
+	dev.exportObj.session1 = dev.exportObj.session1.slice(0, 50); // e.g. a broken apply left half the data
+	let info = null;
+	const r = await sync(dev, cl, { settings: 'off' }, { confirmDeletion: (i) => { info = i; return Promise.resolve(false); } });
+	assert.equal(r.status, 'paused');
+	assert.equal(r.reason, 'deletion');
+	assert.equal(info.cloudSolvesRemoved, 50);
+	assert.deepEqual(cl.data, cloudBefore);
+	assert.deepEqual(dev.state, stateBefore);
+});
+
+test('deletion guard: confirming goes ahead', async () => {
+	const cl = cloud();
+	const dev = device([{ name: 'A', solves: many(100) }]);
+	await sync(dev, cl);
+	dev.exportObj.session1 = dev.exportObj.session1.slice(0, 50);
+	const r = await sync(dev, cl, { settings: 'off' }, { confirmDeletion: () => Promise.resolve(true) });
+	assert.equal(r.status, 'ok');
+	const uid = Object.keys(cl.data.sessions)[0];
+	assert.equal(cl.data.sessions[uid].solves.length, 50);
+});
+
+test('deletion guard: a few deletions do not ask', async () => {
+	const cl = cloud();
+	const dev = device([{ name: 'A', solves: many(100) }]);
+	await sync(dev, cl);
+	dev.exportObj.session1.splice(0, 3);
+	let asked = 0;
+	const r = await sync(dev, cl, { settings: 'off' }, { confirmDeletion: () => { asked++; return Promise.resolve(false); } });
+	assert.equal(asked, 0);
+	assert.equal(r.status, 'ok');
+});
+
+test('deletion guard: removing a whole session always asks, and counts solves removed on this device too', async () => {
+	const cl = cloud();
+	const a = device([{ name: 'A', solves: many(2) }, { name: 'B', solves: many(2, 50) }]);
+	await sync(a, cl);
+	const b = device([]);
+	await sync(b, cl);
+	// device a deletes session B; device b then syncs and would lose it locally
+	const d = JSON.parse(a.properties.sessionData); delete d['2']; a.properties.sessionData = JSON.stringify(d); a.properties.sessionN = 1; delete a.exportObj.session2;
+	let infoA = null;
+	await sync(a, cl, { settings: 'off' }, { confirmDeletion: (i) => { infoA = i; return Promise.resolve(true); } });
+	assert.equal(infoA.cloudSessionsRemoved, 1);
+	let infoB = null;
+	const r = await sync(b, cl, { settings: 'off' }, { confirmDeletion: (i) => { infoB = i; return Promise.resolve(true); } });
+	assert.equal(r.status, 'ok');
+	assert.equal(infoB.localSessionsRemoved, 1);
+	assert.equal(infoB.localSolvesRemoved, 2);
+});
+
+test('local data is backed up before every apply', async () => {
+	const cl = cloud();
+	await sync(device([{ name: 'A', solves: [solve(1)] }]), cl);
+	const dev = device([{ name: 'B', solves: [solve(2)] }]);
+	const backups = [];
+	await sync(dev, cl, { settings: 'off' }, { backupLocal: (b) => { backups.push(plain(b)); dev.log.push('backup'); return Promise.resolve(); } });
+	assert.equal(backups.length, 1);
+	assert.equal(backups[0].exportObj.session1[0][0][1], 2, 'backup holds the data from before the apply');
+	assert.ok(dev.log.indexOf('backup') < dev.log.indexOf('apply'));
+});
+
+test("strategy 'replaceLocal' (download synced copy) makes this device equal to the cloud", async () => {
+	const cl = cloud();
+	await sync(device([{ name: 'Cloud', solves: [solve(1)] }]), cl);
+	const dev = device([{ name: 'Local', solves: [solve(2)] }]);
+	await sync(dev, cl);
+	dev.exportObj.session1.push(solve(3)); // local-only change that the download discards
+	const before = plain(cl.data);
+	const r = await sync(dev, cl, { settings: 'off', strategy: 'replaceLocal' }, { confirmDeletion: () => Promise.resolve(false) });
+	assert.equal(r.status, 'ok', 'explicit replace does not ask the deletion guard');
+	assert.deepEqual(cl.data, before, 'cloud unchanged');
+	assert.equal(dev.exportObj.session1.length + (dev.exportObj.session2 || []).length, 2);
+});
+
+test("strategy 'replaceRemote' (replace synced copy) makes the cloud equal to this device", async () => {
+	const cl = cloud();
+	await sync(device([{ name: 'Cloud', solves: many(30) }]), cl);
+	const dev = device([{ name: 'Local', solves: [solve(9000)] }]);
+	await sync(dev, cl);
+	dev.exportObj = { session1: [solve(9000)] };
+	const d = JSON.parse(dev.properties.sessionData); dev.properties.sessionData = JSON.stringify({ 1: d['1'] }); dev.properties.sessionN = 1;
+	const r = await sync(dev, cl, { settings: 'off', strategy: 'replaceRemote' }, { confirmDeletion: () => Promise.resolve(false) });
+	assert.equal(r.status, 'ok');
+	assert.equal(Object.keys(cl.data.sessions).length, 1);
+});
