@@ -141,6 +141,89 @@ ok($threw, 'invalid table name throws InvalidArgumentException');
 $src = file_get_contents(__DIR__ . '/../../src/userdata2.php');
 ok(!str_contains($src, 'Access-Control-Allow-Origin'), 'source does not contain Access-Control-Allow-Origin');
 
+// --- slice content-addressing ---
+// slice with correct hash stored via batch set; get returns it
+$db = freshDb();
+$sh = hash('sha256', 'hello');
+$sliceId = 'slice' . $sh;
+$r = json_decode(bstimer_userdata(['ids' => $sliceId, 'datas' => 'hello'], $db, 'my_cstimer_saves'), true);
+ok($r['retcode'] === 0, 'slice batch set with correct hash returns retcode 0');
+$r = json_decode(bstimer_userdata(['id' => $sliceId], $db, 'my_cstimer_saves'), true);
+ok($r['retcode'] === 0 && $r['data'] === 'hello', 'slice get returns stored data');
+
+// slice with wrong hash -> 400 slice hash mismatch, nothing written
+$db = freshDb();
+$badSlice = 'slice' . hash('sha256', 'other');
+$r = json_decode(bstimer_userdata(['ids' => 'a1,' . $badSlice, 'datas' => 'x,hello'], $db, 'my_cstimer_saves'), true);
+ok($r['retcode'] === 400 && $r['reason'] === 'slice hash mismatch', 'slice wrong hash returns 400 slice hash mismatch');
+ok((int)$db->query('SELECT COUNT(*) FROM my_cstimer_saves')->fetchColumn() === 0, 'slice wrong hash writes nothing');
+
+// 'sliceABC' (not 64 hex) -> 400 invalid id
+$db = freshDb();
+$r = json_decode(bstimer_userdata(['id' => 'sliceABC', 'data' => 'x'], $db, 'my_cstimer_saves'), true);
+ok($r['retcode'] === 400 && $r['reason'] === 'invalid id', 'sliceABC returns 400 invalid id');
+
+// existing slice is not rewritten
+$db = freshDb();
+$newHash = hash('sha256', 'new');
+$existingSlice = 'slice' . $newHash;
+$stmt = $db->prepare('INSERT INTO my_cstimer_saves (username, save_data, value_hash, upload_time) VALUES (?, ?, ?, CURRENT_TIMESTAMP)');
+$stmt->execute([$existingSlice, 'orig', md5('orig')]);
+$r = json_decode(bstimer_userdata(['ids' => $existingSlice, 'datas' => 'new'], $db, 'my_cstimer_saves'), true);
+ok($r['retcode'] === 0, 'existing slice batch set returns retcode 0');
+$stmt = $db->prepare('SELECT save_data FROM my_cstimer_saves WHERE username = ?');
+$stmt->execute([$existingSlice]);
+ok($stmt->fetchColumn() === 'orig', 'existing slice not rewritten');
+
+// --- allow_custom_ids false ---
+$noCustom = ['allow_custom_ids' => false];
+$hex64 = str_repeat('a', 64);
+// single set / get / cnt with id 'bob' -> 403
+$db = freshDb();
+$r = json_decode(bstimer_userdata(['id' => 'bob', 'data' => 'x'], $db, 'my_cstimer_saves', $noCustom), true);
+ok($r['retcode'] === 403 && $r['reason'] === 'custom ids disabled', 'no-custom single set bob returns 403');
+$r = json_decode(bstimer_userdata(['id' => 'bob'], $db, 'my_cstimer_saves', $noCustom), true);
+ok($r['retcode'] === 403, 'no-custom get bob returns 403');
+$r = json_decode(bstimer_userdata(['id' => 'bob', 'cnt' => '1'], $db, 'my_cstimer_saves', $noCustom), true);
+ok($r['retcode'] === 403, 'no-custom cnt bob returns 403');
+// with a 64-hex id works
+$r = json_decode(bstimer_userdata(['id' => $hex64, 'data' => 'x'], $db, 'my_cstimer_saves', $noCustom), true);
+ok($r['retcode'] === 0, 'no-custom 64-hex set works');
+$r = json_decode(bstimer_userdata(['id' => $hex64], $db, 'my_cstimer_saves', $noCustom), true);
+ok($r['retcode'] === 0 && $r['data'] === 'x', 'no-custom 64-hex get works');
+// batch set mixing a 64-hex main id and valid slices works
+$sh2 = hash('sha256', 'sdata');
+$r = json_decode(bstimer_userdata(['ids' => $hex64 . ',slice' . $sh2, 'datas' => 'x,sdata'], $db, 'my_cstimer_saves', $noCustom), true);
+ok($r['retcode'] === 0, 'no-custom batch set 64-hex + slice works');
+// exists with 'bob' -> 403
+$r = json_decode(bstimer_userdata(['exists' => 'bob'], $db, 'my_cstimer_saves', $noCustom), true);
+ok($r['retcode'] === 403, 'no-custom exists bob returns 403');
+
+// --- allow_custom_ids true (default): 'bob' still works ---
+$db = freshDb();
+$r = json_decode(bstimer_userdata(['id' => 'bob', 'data' => 'x'], $db, 'my_cstimer_saves'), true);
+ok($r['retcode'] === 0, 'default custom set bob works');
+$r = json_decode(bstimer_userdata(['id' => 'bob'], $db, 'my_cstimer_saves'), true);
+ok($r['retcode'] === 0 && $r['data'] === 'x', 'default custom get bob works');
+
+// --- max_item_bytes 10 ---
+$smallBytes = ['max_item_bytes' => 10];
+$db = freshDb();
+$r = json_decode(bstimer_userdata(['id' => 'u', 'data' => str_repeat('a', 11)], $db, 'my_cstimer_saves', $smallBytes), true);
+ok($r['retcode'] === 413 && $r['reason'] === 'too large', 'max_item_bytes 11 bytes returns 413 too large');
+ok((int)$db->query('SELECT COUNT(*) FROM my_cstimer_saves')->fetchColumn() === 0, 'max_item_bytes too large writes nothing');
+$r = json_decode(bstimer_userdata(['id' => 'u', 'data' => str_repeat('a', 10)], $db, 'my_cstimer_saves', $smallBytes), true);
+ok($r['retcode'] === 0, 'max_item_bytes 10 bytes ok');
+
+// --- max_items 2 ---
+$smallItems = ['max_items' => 2];
+$db = freshDb();
+$r = json_decode(bstimer_userdata(['exists' => 'a,b,c'], $db, 'my_cstimer_saves', $smallItems), true);
+ok($r['retcode'] === 413 && $r['reason'] === 'too many ids', 'max_items exists 3 ids returns 413 too many ids');
+$r = json_decode(bstimer_userdata(['ids' => 'a,b,c', 'datas' => 'x,y,z'], $db, 'my_cstimer_saves', $smallItems), true);
+ok($r['retcode'] === 413 && $r['reason'] === 'too many ids', 'max_items batch set 3 returns 413 too many ids');
+ok((int)$db->query('SELECT COUNT(*) FROM my_cstimer_saves')->fetchColumn() === 0, 'max_items batch set writes nothing');
+
 if ($failures > 0) {
 	echo "# FAILURES\n";
 	exit(1);

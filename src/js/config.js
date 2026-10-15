@@ -15,6 +15,9 @@ var siteConfig = (function() {
 	var defaults = {
 		// Base URL (with trailing slash) of userdata2.php, used by export/import to server.
 		'dataServer': 'https://cstimer.net/',
+		// Offer "Export to server" with an id the user types (no password, so a guessable id
+		// exposes that backup). false shows only the WCA-account server export.
+		'customIdSync': true,
 		// Base URL (with trailing slash) of comp.php for online competitions.
 		// Empty hides the Online Competition tool.
 		'compServer': 'https://cstimer.net/',

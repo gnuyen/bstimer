@@ -12,6 +12,7 @@ bsTimer is csTimer with a few changes that are useful when you host it yourself 
 - Offline support: `src/sw.js` is a working service worker. The page loads from the network when it can and from a cached copy when offline; scripts and styles are served from cache and refreshed in the background, so a deploy shows up on the second load.
 - Screen Wake Lock: the screen stays awake while a timer is running (`src/js/kernel.js`).
 - `src/js/app-auth.js`: hands Google sign-in back to the bsTimer iOS app. It only acts on URLs carrying `state=cstimer-ios`, which only the app adds.
+- `src/userdata2.php`: the export/import-to-server backend, with prepared statements, validated ids, content-checked write-once slices, size limits and no cross-origin access. Settings come from the server settings file.
 
 ## Hosting your own copy
 
@@ -32,6 +33,7 @@ var SITE_CONFIG = {
 | Setting | Used for | Default |
 |---|---|---|
 | dataServer | Base URL (with trailing slash) of `userdata2.php` (Export → upload/download to server). That script isn't part of csTimer's source; leave the default or host your own. | `https://cstimer.net/` |
+| customIdSync | Show "Export to server" with an id the user types. That id is the only key (no password), so anyone who guesses it can read or overwrite the backup. false leaves only the WCA-account server export. | `true` |
 | compServer | Base URL of `comp.php` for online competitions. Empty hides the Online Competition tool. | `https://cstimer.net/` |
 | battleSocket | WebSocket for the battle tool. Empty hides the Online battle tool. | `wss://cstimer.net/ws20230409` |
 | wcaClientId | WCA sign-in. Register an application at worldcubeassociation.org and add your page URL as a redirect URI. Put the application id and secret in the server settings file (below). | csTimer's |
@@ -53,6 +55,13 @@ return [
 	'wca_application_secret' => '<your WCA application secret>',
 	'wca_token_salt' => '<a long random string>',
 	'wca_referrer_pattern' => '/^(https:\/\/timer\.example\.org\/)(\?.*)?$/i',
+	'userdata_dsn' => 'mysql:host=localhost;dbname=cstimer;charset=utf8mb4',
+	'userdata_db_user' => '<db user>',
+	'userdata_db_password' => '<db password>',
+	'userdata_table' => 'my_cstimer_saves',
+	'userdata_allow_custom_ids' => true,
+	'userdata_max_item_bytes' => 1048576,
+	'userdata_max_items' => 200,
 ];
 ```
 
@@ -63,10 +72,20 @@ return [
 | wca_referrer_pattern | regex the page URL must match; its first capture group is the redirect URI sent to WCA |
 | bug_log | where bug.php writes; default `bstimer-logs/bug.log` one level above the web root |
 | bug_log_max_bytes | log size before it rotates to `.1`; default 1 MiB |
+| userdata_dsn, userdata_db_user, userdata_db_password | Database for `userdata2.php` (PDO DSN, e.g. `mysql:host=localhost;dbname=cstimer;charset=utf8mb4`). Empty DSN disables it. |
+| userdata_table | Table with columns `username` (primary key), `save_data`, `value_hash`, `upload_time`. |
+| userdata_allow_custom_ids | false refuses typed ids: main backup rows must be WCA tokens. Pair it with `customIdSync: false`. |
+| userdata_max_item_bytes, userdata_max_items | Largest stored value, and most ids in one request. |
 
 ### Deploying
 
 Upload `src/` to your web server, including your `src/js/config.local.js`. Keep secrets out of the PHP files: put them in the server settings file, then the PHP files can be uploaded like everything else.
+
+### Security notes
+
+- Use WCA sign-in for server backups and set `customIdSync: false` with `userdata_allow_custom_ids => false`: typed ids work like passwords anyone can guess.
+- `wca_token_salt` must be a long random secret. Changing it changes every WCA user's storage id.
+- Keep the server settings file outside the web root, and don't leave logs or old copies of PHP scripts in it: anything PHP-executable or readable there is public.
 
 ## Keeping up with csTimer
 

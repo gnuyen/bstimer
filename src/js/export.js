@@ -42,6 +42,9 @@ var exportFunc = execMain(function() {
 			}))
 		)
 	);
+	if (!siteConfig['customIdSync']) {
+		inServ.closest('tr').remove();
+	}
 
 	function updateExpString() {
 		return storage.exportAll().then(function(exportObj) {
