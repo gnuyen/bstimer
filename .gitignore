@@ -9,3 +9,4 @@ deploy.env
 deploy.sh
 deploy.test.sh
 src/config.local.php
+/bstimer-logs/
