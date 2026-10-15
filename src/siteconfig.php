@@ -15,6 +15,10 @@
  *   	'wca_application_secret' => '...',
  *   	'wca_token_salt' => '...',
  *   	'wca_referrer_pattern' => '/^(https:\/\/timer\.example\.org\/)(\?.*)?$/i',
+ *   	'userdata_dsn' => 'mysql:host=localhost;dbname=cstimer;charset=utf8mb4',
+ *   	'userdata_db_user' => 'cstimer',
+ *   	'userdata_db_password' => 'secret',
+ *   	'userdata_table' => 'my_cstimer_saves',
  *   ];
  */
 
@@ -38,6 +42,12 @@ function bstimer_config(): array
 		'bug_log' => dirname(__DIR__) . '/bstimer-logs/bug.log',
 		// Maximum size of the bug log before rotation
 		'bug_log_max_bytes' => 1048576,
+		// PDO DSN for userdata2.php, e.g. 'mysql:host=localhost;dbname=cstimer;charset=utf8mb4'. Empty disables it.
+		'userdata_dsn' => '',
+		'userdata_db_user' => '',
+		'userdata_db_password' => '',
+		// columns: username (primary key), save_data, value_hash, upload_time
+		'userdata_table' => 'my_cstimer_saves',
 	];
 
 	$paths = [];
