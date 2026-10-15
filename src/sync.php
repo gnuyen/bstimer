@@ -97,7 +97,7 @@ function bstimer_sync_ensure_schema(PDO $db, string $prefix): void
 		$db->exec("CREATE INDEX IF NOT EXISTS " . $quote . $prefix . 'keys_space' . $quote . " ON $keys ($sp)");
 	}
 	$db->exec("CREATE TABLE IF NOT EXISTS $versions ($sp CHAR(32), $version BIGINT, $manifest $long, $created BIGINT, PRIMARY KEY ($sp, $version))$charset");
-	$db->exec("CREATE TABLE IF NOT EXISTS $slices ($sp CHAR(32), $hash CHAR(64), $data $long, PRIMARY KEY ($sp, $hash))$charset");
+	$db->exec("CREATE TABLE IF NOT EXISTS $slices ($sp CHAR(32), $hash CHAR(64), $data $long, $created BIGINT NOT NULL DEFAULT 0, PRIMARY KEY ($sp, $hash))$charset");
 	$done[$db] = true;
 }
 
@@ -230,19 +230,22 @@ function bstimer_sync_prune(PDO $db, array $t, string $space, int $now, int $kee
 		$stmt = $db->prepare("DELETE FROM " . $t['versions'] . " WHERE space_id = ? AND version IN ($placeholders)");
 		$stmt->execute(array_merge([$space], $delete));
 	}
-	// delete slices no longer referenced by any remaining version
+	// delete slices no longer referenced by any remaining version, but only
+	// those older than a day so fresh uploads from another device's sync in
+	// progress survive.
 	$referenced = [];
 	foreach ($keep as $version => $unused) {
 		foreach (bstimer_sync_manifest_hashes($db, $t, $space, (int)$version) as $h) {
 			$referenced[$h] = true;
 		}
 	}
-	$stmt = $db->prepare("SELECT hash FROM " . $t['slices'] . " WHERE space_id = ?");
+	$stmt = $db->prepare("SELECT hash, created FROM " . $t['slices'] . " WHERE space_id = ?");
 	$stmt->execute([$space]);
-	$all = $stmt->fetchAll(PDO::FETCH_COLUMN);
+	$all = $stmt->fetchAll(PDO::FETCH_ASSOC);
 	$orphan = [];
-	foreach ($all as $h) {
-		if (!isset($referenced[$h])) {
+	foreach ($all as $row) {
+		$h = (string)$row['hash'];
+		if (!isset($referenced[$h]) && (int)$row['created'] < $now - 86400) {
 			$orphan[] = $h;
 		}
 	}
@@ -271,7 +274,7 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 		bstimer_sync_ensure_schema($db, $prefix);
 		$t = bstimer_sync_tables($db, $prefix);
 		$action = (string)($post['action'] ?? '');
-		if (!in_array($action, ['create', 'head', 'get_slices', 'missing', 'put', 'versions', 'restore', 'login_wca', 'logout'], true)) {
+		if (!in_array($action, ['create', 'head', 'get_slices', 'missing', 'put', 'versions', 'restore', 'login_wca', 'logout', 'upload_slices'], true)) {
 			return json_encode(['retcode' => 400, 'reason' => 'unknown action']);
 		}
 
@@ -384,6 +387,51 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 			return json_encode(['retcode' => 0, 'missing' => $missing]);
 		}
 
+		if ($action === 'upload_slices') {
+			$slicesRaw = json_decode((string)($post['slices'] ?? '{}'), true);
+			if (!is_array($slicesRaw)) {
+				return BSTIMER_SYNC_BAD;
+			}
+			// normalize a JSON object into an associative array
+			if (array_is_list($slicesRaw)) {
+				$slices = [];
+				foreach ($slicesRaw as $k => $v) {
+					$slices[(string)$k] = $v;
+				}
+			} else {
+				$slices = $slicesRaw;
+			}
+			if (count($slices) > $maxSlices) {
+				return BSTIMER_SYNC_TOOLARGE;
+			}
+			$provided = [];
+			foreach ($slices as $h => $data) {
+				$h = (string)$h;
+				if (!bstimer_sync_valid_hash($h)) {
+					return BSTIMER_SYNC_BAD;
+				}
+				if (!is_string($data) || strlen($data) > $maxSliceBytes) {
+					return BSTIMER_SYNC_TOOLARGE;
+				}
+				if (hash('sha256', $data) !== $h) {
+					return BSTIMER_SYNC_BAD;
+				}
+				$provided[$h] = $data;
+			}
+			// all checks done; insert the slices this space doesn't have yet
+			$existing = bstimer_sync_stored_hashes($db, $t, $space, array_keys($provided));
+			$existingSet = array_flip($existing);
+			$stored = 0;
+			$stmtIns = $db->prepare("INSERT INTO " . $t['slices'] . " (space_id, hash, data, created) VALUES (?, ?, ?, ?)");
+			foreach ($provided as $h => $data) {
+				if (!isset($existingSet[$h])) {
+					$stmtIns->execute([$space, $h, $data, $now]);
+					$stored++;
+				}
+			}
+			return json_encode(['retcode' => 0, 'stored' => $stored]);
+		}
+
 		if ($action === 'put') {
 			$expected = (int)($post['expected'] ?? 0);
 			$manifest = (string)($post['manifest'] ?? '');
@@ -454,10 +502,10 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 				}
 				$existing = bstimer_sync_stored_hashes($db, $t, $space, array_keys($provided));
 				$existingSet = array_flip($existing);
-				$stmtIns = $db->prepare("INSERT INTO " . $t['slices'] . " (space_id, hash, data) VALUES (?, ?, ?)");
+				$stmtIns = $db->prepare("INSERT INTO " . $t['slices'] . " (space_id, hash, data, created) VALUES (?, ?, ?, ?)");
 				foreach ($provided as $h => $data) {
 					if (!isset($existingSet[$h])) {
-						$stmtIns->execute([$space, $h, $data]);
+						$stmtIns->execute([$space, $h, $data, $now]);
 					}
 				}
 				$stmtVer = $db->prepare("INSERT INTO " . $t['versions'] . " (space_id, version, manifest, created) VALUES (?, ?, ?, ?)");

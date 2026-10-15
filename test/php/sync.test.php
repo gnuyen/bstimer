@@ -158,6 +158,26 @@ ok(!in_array($sess, $stored, true) && !in_array($tok, $stored, true), 'sessions 
 ok(call($db, ['action' => 'logout', 'session' => $sess])['retcode'] === 0, 'logout succeeds');
 ok(call($db, ['action' => 'head', 'session' => $sess])['retcode'] === 401, 'logged-out session no longer works');
 
+// ---------- staged slice uploads ----------
+$db = db();
+$code = call($db, ['action' => 'create'])['code'];
+$p1 = slice('part one'); $p2 = slice('part two');
+$r = call($db, ['action' => 'upload_slices', 'code' => $code, 'slices' => json_encode([$p1[0] => $p1[1], $p2[0] => $p2[1]])]);
+ok($r['retcode'] === 0 && $r['stored'] === 2, 'upload_slices stores slices without a version');
+ok(call($db, ['action' => 'upload_slices', 'code' => $code, 'slices' => json_encode([$p1[0] => $p1[1]])])['stored'] === 0, 'uploading a slice again stores nothing new');
+ok(call($db, ['action' => 'upload_slices', 'code' => $code, 'slices' => json_encode([hash('sha256', 'a') => 'b'])])['retcode'] === 400, 'upload_slices checks hashes');
+ok(call($db, ['action' => 'upload_slices', 'code' => $code, 'slices' => json_encode([$p1[0] => $p1[1]])], null, ['max_slice_bytes' => 3])['retcode'] === 413, 'upload_slices checks sizes');
+ok(call($db, ['action' => 'upload_slices', 'slices' => '{}'])['retcode'] === 401, 'upload_slices needs credentials');
+$r = put($db, $code, 0, [$p1, $p2], []);
+ok($r['retcode'] === 0, 'put can reference slices uploaded earlier');
+// an unreferenced fresh upload survives another device's prune; an old one is cleaned up
+$fresh = slice('fresh upload');
+call($db, ['action' => 'upload_slices', 'code' => $code, 'slices' => json_encode([$fresh[0] => $fresh[1]])]);
+put($db, $code, 1, [$p1], [], $NOW + 60);
+ok(empty(call($db, ['action' => 'missing', 'code' => $code, 'hashes' => $fresh[0]])['missing']), 'unreferenced slices younger than a day are kept');
+put($db, $code, 2, [$p1], [], $NOW + 2 * 86400);
+ok(call($db, ['action' => 'missing', 'code' => $code, 'hashes' => $fresh[0]])['missing'] === [$fresh[0]], 'unreferenced slices older than a day are deleted');
+
 // ---------- misc ----------
 ok(call(db(), ['action' => 'bogus'])['retcode'] === 400, 'unknown action is 400');
 $src = file_get_contents(__DIR__ . '/../../src/sync.php');
