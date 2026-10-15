@@ -11,9 +11,9 @@ function bstimer_userdata_ensure_history(PDO $db, string $historyTable): void
 {
 	// Run CREATE TABLE at most once per connection: on MySQL it commits any open
 	// transaction, even when the table already exists.
-	static $done = [];
-	$key = spl_object_id($db) . ':' . $historyTable;
-	if (isset($done[$key])) {
+	static $done = null;
+	$done = $done ?? new WeakMap();
+	if (isset($done[$db][$historyTable])) {
 		return;
 	}
 	$driver = $db->getAttribute(PDO::ATTR_DRIVER_NAME);
@@ -25,7 +25,7 @@ function bstimer_userdata_ensure_history(PDO $db, string $historyTable): void
 		$sql = "CREATE TABLE IF NOT EXISTS $h (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, save_data TEXT, value_hash TEXT, upload_time TEXT, replaced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)";
 	}
 	$db->exec($sql);
-	$done[$key] = true;
+	$done[$db] = ($done[$db] ?? []) + [$historyTable => true];
 }
 
 function bstimer_userdata(array $post, PDO $db, string $table, array $limits = [], string $historyTable = ''): string
