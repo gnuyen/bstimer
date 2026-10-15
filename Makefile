@@ -29,6 +29,7 @@ lib/puzzlefactory.js \
 kernel.js \
 export.js \
 logohint.js \
+appupdate.js \
 timer.js \
 timer/input.js \
 timer/stackmat.js \

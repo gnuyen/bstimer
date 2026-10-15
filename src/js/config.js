@@ -13,17 +13,22 @@
 // index.php loads js/config.local.js, when it exists, just before this file.
 var siteConfig = (function() {
 	var defaults = {
-		// Base URL (with trailing slash) of userdata2.php, used by export/import to server,
-		// and of comp.php, used by online competitions.
+		// Base URL (with trailing slash) of userdata2.php, used by export/import to server.
 		'dataServer': 'https://cstimer.net/',
-		// WebSocket URL for the battle tool.
+		// Base URL (with trailing slash) of comp.php for online competitions.
+		// Empty hides the Online Competition tool.
+		'compServer': 'https://cstimer.net/',
+		// WebSocket URL for the battle tool. Empty hides the Online battle tool.
 		'battleSocket': 'wss://cstimer.net/ws20230409',
 		// OAuth client ids. Each provider must list your redirect URI for its client.
 		'wcaClientId': '63a89d6694b1ea2d7b7cbbe174939a4d2adf8dd26e69acacd1280af7e7727554',
 		'googleClientId': '738060786798-octf9tngnn8ibd6kau587k34au263485.apps.googleusercontent.com',
 		// Redirect URIs sent when signing in. Empty means this page's URL without its query.
 		'wcaRedirectUri': '',
-		'googleRedirectUri': ''
+		'googleRedirectUri': '',
+		// Newest bsTimer iOS app revision. When the app (user agent "bsTimer/<n>") is older,
+		// the page shows a short notice. 0 turns the check off.
+		'latestAppRevision': 0
 	};
 	var cfg = self['SITE_CONFIG'] || {};
 	for (var key in defaults) {

@@ -32,6 +32,7 @@
   <script type="text/javascript" src="js/kernel.js"></script>
   <script type="text/javascript" src="js/export.js"></script>
   <script type="text/javascript" src="js/logohint.js"></script>
+  <script type="text/javascript" src="js/appupdate.js"></script>
   <script type="text/javascript" src="js/timer.js"></script>
   <script type="text/javascript" src="js/timer/input.js"></script>
   <script type="text/javascript" src="js/timer/stackmat.js"></script>

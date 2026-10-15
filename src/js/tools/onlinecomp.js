@@ -62,7 +62,7 @@ var onlinecomp = execMain(function() {
 
 	function updateCompList() {
 		refreshButton.val('...');
-		$.post(siteConfig['dataServer'] + 'comp.php', {
+		$.post(siteConfig['compServer'] + 'comp.php', {
 			'action': 'list'
 		}, function(value) {
 			pathList = [];
@@ -103,7 +103,7 @@ var onlinecomp = execMain(function() {
 
 	function fetchScramble() {
 		var comppath = getCompPath();
-		$.post(siteConfig['dataServer'] + 'comp.php', {
+		$.post(siteConfig['compServer'] + 'comp.php', {
 			'action': 'scramble',
 			'comp': comppath[0],
 			'path': comppath[1]
@@ -241,7 +241,7 @@ var onlinecomp = execMain(function() {
 			return;
 		}
 		var comppath = getCompPath();
-		$.post(siteConfig['dataServer'] + 'comp.php', {
+		$.post(siteConfig['compServer'] + 'comp.php', {
 			'action': 'submit',
 			'comp': comppath[0],
 			'path': comppath[1],
@@ -267,7 +267,7 @@ var onlinecomp = execMain(function() {
 		resetProgress(false, true);
 		var comppath = getCompPath();
 		var showAnonym = anonymInput.prop('checked') ? 1 : 0;
-		$.post(siteConfig['dataServer'] + 'comp.php', {
+		$.post(siteConfig['compServer'] + 'comp.php', {
 			'action': 'result',
 			'comp': comppath[0],
 			'path': comppath[1],
@@ -353,7 +353,7 @@ var onlinecomp = execMain(function() {
 		if (!uid) {
 			return;
 		}
-		$.post(siteConfig['dataServer'] + 'comp.php', {
+		$.post(siteConfig['compServer'] + 'comp.php', {
 			'action': 'myresult',
 			'uid': uid
 		}, function(value) {
@@ -449,6 +449,9 @@ var onlinecomp = execMain(function() {
 	}
 
 	$(function() {
+		if (!siteConfig['compServer']) {
+			return; // no competition server configured: hide the tool
+		}
 		tools.regTool('onlinecomp', OLCOMP_OLCOMP, execFunc);
 		kernel.regListener('onlinecomp', 'timestd', procSignal);
 		kernel.regListener('onlinecomp', 'timepnt', procSignal);

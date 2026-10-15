@@ -433,6 +433,9 @@ var battle = execMain(function() {
 	}
 
 	$(function() {
+		if (!siteConfig['battleSocket']) {
+			return; // no battle server configured: hide the tool
+		}
 		roomTable = $('<table class="table">');
 		tools.regTool('battle', TOOLS_BATTLE, execFunc);
 		kernel.regListener('battle', 'timestd', procSignal);
