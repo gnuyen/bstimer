@@ -18,6 +18,8 @@ var siteConfig = (function() {
 		// Offer "Export to server" with an id the user types (no password, so a guessable id
 		// exposes that backup). false shows only the WCA-account server export.
 		'customIdSync': true,
+		// URL of bsTimer's sync.php for syncing between devices. Empty turns server sync off.
+		'syncServer': '',
 		// Base URL (with trailing slash) of comp.php for online competitions.
 		// Empty hides the Online Competition tool.
 		'compServer': 'https://cstimer.net/',
