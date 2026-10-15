@@ -9,6 +9,7 @@
   <link rel="manifest" href="cstimer.webmanifest">
 <?php include('lang/langDet.php');?>
   <link rel='stylesheet' type='text/css' href='css/style.css'>
+  <script type="text/javascript" src="js/app-auth.js"></script>
   <script type="text/javascript" src="js/lib/jquery-1.8.0.js"></script>
   <script type="text/javascript" src="js/lib/utillib.js"></script>
   <script type="text/javascript" src="js/lib/sha256.js"></script>
