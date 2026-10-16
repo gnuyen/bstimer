@@ -155,7 +155,7 @@ Conflicts are usually limited to the few files listed under "Changes from csTime
 
 ## Tests
 
-Unit tests: `node --test test/js/`. PHP tests: `php test/php/<name>.test.php`.
+Unit tests: `node --test test/js/` (including the service worker, `sw.test.js`). PHP tests: `php test/php/<name>.test.php`.
 
 Browser tests live in `test/browser/` and run with safaridriver:
 - `sync_e2e.py` — the debug transport.
