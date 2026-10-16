@@ -77,6 +77,18 @@ var syncICloud = (function() {
 			});
 		}
 
+		// The app's own copy of this device's settings (all of them, kept apart from sync),
+		// so a fresh install or another Apple device starts set up the same way.
+		function getSettings() {
+			return call({ 'op': 'getSettings' }).then(function(reply) {
+				return typeof reply === 'string' ? reply : null;
+			});
+		}
+
+		function setSettings(text) {
+			return call({ 'op': 'setSettings', 'data': text });
+		}
+
 		// Delete the synced data and the server code from iCloud (account deletion).
 		function deleteAll() {
 			return call({ 'op': 'deleteAll' }).then(function() {
@@ -93,7 +105,9 @@ var syncICloud = (function() {
 			'setCode': setCode,
 			'get': get,
 			'put': put,
-			'deleteAll': deleteAll
+			'deleteAll': deleteAll,
+			'getSettings': getSettings,
+			'setSettings': setSettings
 		};
 	}
 

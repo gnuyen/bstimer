@@ -122,3 +122,13 @@ test('deleteAll asks the app to delete the iCloud data and forgets the code', as
 	assert.equal(t.code(), null);
 	await assert.rejects(load().create(fakeBridge({ deleteAll: new Error('offline') }).call).deleteAll());
 });
+
+test('getSettings returns the stored text or null; setSettings sends it', async () => {
+	const b = fakeBridge({ getSettings: '{"theme":1}', setSettings: true });
+	const t = load().create(b.call);
+	assert.equal(await t.getSettings(), '{"theme":1}');
+	await t.setSettings('{"x":2}');
+	assert.deepEqual(b.sent[1], { op: 'setSettings', data: '{"x":2}' });
+	assert.equal(await load().create(fakeBridge({ getSettings: null }).call).getSettings(), null);
+	assert.equal(await load().create(fakeBridge({ getSettings: { no: 1 } }).call).getSettings(), null);
+});

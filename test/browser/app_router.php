@@ -24,7 +24,9 @@ if ($path === '/fakecloud') {
 			$out = ['ok' => true, 'tag' => $st['tag']];
 			break;
 		case 'setCode': $st['code'] = $msg['code']; $out = true; break;
-		case 'deleteAll': $st['data'] = null; $st['tag'] = null; $st['code'] = null; $out = true; break;
+		case 'deleteAll': $st['data'] = null; $st['tag'] = null; $st['code'] = null; $st['settings'] = null; $out = true; break;
+		case 'getSettings': $out = $st['settings'] ?? null; break;
+		case 'setSettings': $st['settings'] = $msg['data']; $out = true; break;
 		case 'reset': $st = ['data' => null, 'tag' => null, 'code' => null, 'n' => 0]; $out = true; break;
 		case 'peek': $out = $st; break;
 	}

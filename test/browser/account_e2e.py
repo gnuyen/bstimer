@@ -248,6 +248,25 @@ try:
     time.sleep(6)
     check('a reload does not start syncing again',
           cloud('peek')['data'] is None and cloud('peek')['code'] is None, cloud('peek'))
+
+    # 5. App settings: kept in iCloud apart from sync, restored on a fresh install only
+    B = 'http://localhost:8081/'
+    cloud('reset')
+    goto(A); reset()
+    js('kernel.setProp("timerSize", 7); kernel.setProp("useMilli", true); return 1;')
+    time.sleep(6)
+    saved = json.loads(cloud('peek').get('settings') or '{}')
+    check('the app saves its settings to iCloud', saved.get('timerSize') == 7 and saved.get('useMilli') is True, saved)
+    check('session bookkeeping is not part of them', 'sessionData' not in saved and 'bsSyncMark' not in saved, list(saved))
+    goto(B); reset()  # a fresh install: empty storage, then the first load restores and reloads
+    time.sleep(4); wait_ready()
+    check('a fresh install gets the settings back', js('return [kernel.getProp("timerSize"), kernel.getProp("useMilli")]') == [7, True],
+          js('return [kernel.getProp("timerSize"), kernel.getProp("useMilli")]'))
+    goto(A); js('kernel.setProp("timerSize", 9); return 1;'); time.sleep(6)
+    goto(B); time.sleep(3)
+    check('an existing install is not overwritten later', js('return kernel.getProp("timerSize")') == 7, js('return kernel.getProp("timerSize")'))
+    goto(W); reset()
+    check('the website does not get the app settings', js('return kernel.getProp("timerSize")') != 9, js('return kernel.getProp("timerSize")'))
 finally:
     wd('DELETE', S)
 

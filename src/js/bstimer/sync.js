@@ -304,6 +304,60 @@ var bsSync = execMain(function() {
 		location.reload();
 	}
 
+	// App: all of this device's settings are also kept in iCloud, apart from sync (which
+	// shares only some settings, and only when asked), so a fresh install or another Apple
+	// device starts set up the same way. Restored once, on the first run at this site.
+	var APP_SETTINGS_SKIP = { 'session': 1, 'sessionData': 1, 'sessionN': 1, 'bsSyncMark': 1 };
+	var appSettingsTimer = null;
+
+	function appSettingsText() {
+		var props = mathlib.str2obj(localStorage['properties'] || '{}');
+		var out = {};
+		for (var k in props) {
+			if (Object.prototype.hasOwnProperty.call(props, k) && !APP_SETTINGS_SKIP[k]) {
+				out[k] = props[k];
+			}
+		}
+		return JSON.stringify(out);
+	}
+
+	function saveAppSettings() {
+		if (!icloudOn()) {
+			return;
+		}
+		if (appSettingsTimer) {
+			clearTimeout(appSettingsTimer);
+		}
+		appSettingsTimer = setTimeout(function() {
+			appSettingsTimer = null;
+			var text = appSettingsText();
+			if (text.length < 500000) { // iCloud key-value storage holds 1 MB in all
+				transports['icloud']['setSettings'](text).catch(function() {});
+			}
+		}, 3000);
+	}
+
+	// Resolves true when settings were restored (the page then has to reload).
+	function restoreAppSettings() {
+		return transports['icloud']['getSettings']().then(function(text) {
+			var saved = text ? JSON.parse(text) : null;
+			if (!saved || typeof saved !== 'object') {
+				return false;
+			}
+			var props = mathlib.str2obj(localStorage['properties'] || '{}');
+			for (var k in saved) {
+				if (Object.prototype.hasOwnProperty.call(saved, k) && !APP_SETTINGS_SKIP[k]) {
+					props[k] = saved[k];
+				}
+			}
+			localStorage['properties'] = mathlib.obj2str(props);
+			kernel.loadProp();
+			return true;
+		}).catch(function() {
+			return false;
+		});
+	}
+
 	// Each backend has its own merge base. The server's key stays 'state' (as before
 	// iCloud existed). The import mark is shared, so one backend's sync doesn't look like an
 	// import to the next.
@@ -1249,6 +1303,7 @@ var bsSync = execMain(function() {
 	var appleResult = takeAppleResult();
 
 	function init() {
+		var prefsStored = false;
 		// Without IndexedDB, keep going with the in-memory fallback.
 		ready = openKV().catch(function() {
 			kvAvailable = false;
@@ -1257,6 +1312,7 @@ var bsSync = execMain(function() {
 				kvGet('prefs').then(function(p) {
 					if (p && typeof p === 'object') {
 						prefs = p;
+						prefsStored = true;
 					}
 				}),
 				kvGet('serverCred').then(function(c) {
@@ -1266,6 +1322,16 @@ var bsSync = execMain(function() {
 		}).then(function() {
 			return transports['icloud'] ? transports['icloud']['init']() : null;
 		}).then(function() {
+			// First run at this site in the app: bring back this person's app settings.
+			if (prefsStored || !icloudOn()) {
+				return false;
+			}
+			return savePrefs().then(restoreAppSettings);
+		}).then(function(restored) {
+			if (restored) {
+				location.reload();
+				return new Promise(function() {}); // stop here; the page is reloading
+			}
 			isReady = true;
 			if (appleResult && appleResult['token'] && transports['server']) {
 				finishAppleLogin(appleResult['token'], appleResult['code']);
@@ -1291,6 +1357,18 @@ var bsSync = execMain(function() {
 			} catch (e) {
 				// ignore
 			}
+
+			try {
+				// a module name of its own: csTimer keeps one listener per module and signal
+				kernel.regListener('bssyncapp', 'property', function(signal, value) {
+					if (!(value && APP_SETTINGS_SKIP[value[0]])) {
+						saveAppSettings();
+					}
+				});
+			} catch (e) {
+				// ignore
+			}
+			saveAppSettings();
 
 			try {
 				kernel.regListener('bssync', 'timerStatus', function(signal, value) {
