@@ -9,6 +9,7 @@ var logohint = execMain(function() {
 
 	var isMouseIn = false;
 	var enabled = false;
+	var logoName = siteConfig['siteName'] || 'csTimer'; // bsTimer: the name in the logo
 
 	function msgFinished() {
 		curMsg = undefined;
@@ -28,13 +29,13 @@ var logohint = execMain(function() {
 		curMsg = msgList.shift();
 		if (curMsg == undefined) {
 			logocc.removeClass('hint');
-			logocc.html('csTimer');
+			logocc.html(logoName);
 			return;
 		}
 		var logow = logo.width();
-		logocc.html('<div class="pad" style="width: ' + logow + 'px; ">csTimer</div>' +
+		logocc.html('<div class="pad" style="width: ' + logow + 'px; ">' + logoName + '</div>' +
 			'<span class="msg">' + curMsg + '</span>' +
-			'<div class="pad" style="width:' + logow + 'px; margin-right:' + (-logow) + 'px;">csTimer</div>');
+			'<div class="pad" style="width:' + logow + 'px; margin-right:' + (-logow) + 'px;">' + logoName + '</div>');
 		logocc.removeClass('hint');
 		var duration = (curMsg.length + 15) * 0.1 + 's';
 		logocc.css({
@@ -68,6 +69,7 @@ var logohint = execMain(function() {
 		logo = $('#logo');
 		logocc = logo.children().children();
 		logocc.bind('oanimationend animationend webkitAnimationEnd', msgFinished);
+		logocc.html(logoName);
 		var about = $('#about');
 		var title = about.children('h1').appendTo(kernel.temp).html();
 		logo.mouseenter(function() {

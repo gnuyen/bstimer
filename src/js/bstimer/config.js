@@ -35,6 +35,8 @@ var siteConfig = (function() {
 		// next to this page if empty). Empty Services ID hides it.
 		'appleServicesId': '',
 		'appleRedirectUri': '',
+		// The name shown in the logo button.
+		'siteName': 'csTimer',
 		// Shown on privacy.html: who runs this site, and an email address or URL for privacy
 		// requests. Also linked from the Sync section when set.
 		'siteOperator': '',
