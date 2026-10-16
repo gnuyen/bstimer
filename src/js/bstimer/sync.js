@@ -606,6 +606,39 @@ var bsSync = execMain(function() {
 			});
 			$div.append($wca);
 
+			var $ggl = $('<a class="click">').text('Sign in with Google');
+			$ggl.on('click', function() {
+				var token = null;
+				try {
+					var ggl = JSON.parse(localStorage['gglData'] || 'null');
+					if (ggl && ggl['access_token']) {
+						token = ggl['access_token'];
+					}
+				} catch (e) {
+					token = null;
+				}
+				if (!token) {
+					alert('Sign in with your Google account above first, then press this again.');
+					return;
+				}
+				setStatus('Syncing…');
+				transports['server']['loginGoogle'](token).then(function() {
+					return resetState();
+				}).then(function() {
+					return syncNow('manual');
+				}).then(function() {
+					renderSync();
+				}).catch(function(e) {
+					var msg = String(e);
+					if (msg.indexOf('server 401') !== -1) {
+						alert('Google sign-in has expired. Sign in with Google above again, then press this.');
+					}
+					prefs['lastError'] = msg;
+					renderSync();
+				});
+			});
+			$div.append($ggl);
+
 			syncSection.append($div);
 			return;
 		}

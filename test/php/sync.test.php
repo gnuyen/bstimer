@@ -152,6 +152,30 @@ ok(call($db, ['action' => 'head', 'session' => $r['session']])['version'] === 1,
 $r = call($db, ['action' => 'login_wca', 'token' => $tok, 'code' => $code]);
 ok($r['retcode'] === 409, 'an account already linked to another space is not moved');
 
+// ---------- Google sign-in ----------
+// The verifier stands in for Google's tokeninfo check: token -> account id (sub), or null.
+$gopts = ['google_client_id' => 'cid', 'google_verify' => function ($token, $clientId) {
+	if ($clientId !== 'cid') return null;
+	return ['tokA' => 'sub-1', 'tokA2' => 'sub-1', 'tokB' => 'sub-2'][$token] ?? null;
+}];
+$gdb = db();
+ok(call($gdb, ['action' => 'login_google', 'token' => 'tokA'])['retcode'] === 404, 'Google sign-in is off without a client id');
+$r = call($gdb, ['action' => 'login_google', 'token' => 'tokA'], null, $gopts);
+ok($r['retcode'] === 0 && strlen($r['session']) >= 32 && $r['created'] === true, 'Google sign-in creates a space and returns a session');
+$r2 = call($gdb, ['action' => 'login_google', 'token' => 'tokA2'], null, $gopts);
+ok($r2['retcode'] === 0 && $r2['created'] === false, 'a new token for the same Google account reaches the same space');
+$gs = slice('google data');
+call($gdb, ['action' => 'put', 'session' => $r['session'], 'expected' => '0', 'manifest' => manifest([$gs[0]]), 'slices' => json_encode([$gs[0] => $gs[1]])]);
+ok(call($gdb, ['action' => 'head', 'session' => $r2['session']])['version'] === 1, 'both Google sessions see the same space');
+ok(call($gdb, ['action' => 'login_google', 'token' => 'forged'], null, $gopts)['retcode'] === 401, 'a token Google does not confirm is refused');
+ok(call($gdb, ['action' => 'login_google', 'token' => ''], null, $gopts)['retcode'] === 400, 'an empty token is refused');
+$gcode = call($gdb, ['action' => 'create'])['code'];
+$r = call($gdb, ['action' => 'login_google', 'token' => 'tokB', 'code' => $gcode], null, $gopts);
+ok($r['retcode'] === 0 && $r['created'] === false, 'signing in with a code links the Google account to that space');
+ok(call($gdb, ['action' => 'login_google', 'token' => 'tokA', 'code' => $gcode], null, $gopts)['retcode'] === 409, 'a Google account linked elsewhere is not moved');
+$stored = $gdb->query("SELECT key_hash FROM bstimer_sync_keys")->fetchAll(PDO::FETCH_COLUMN);
+ok(!in_array('sub-1', $stored, true) && !in_array('tokA', $stored, true), 'Google ids and tokens are not stored in plain text');
+
 // sessions are stored hashed, and logout revokes
 $stored = $db->query("SELECT key_hash FROM bstimer_sync_keys")->fetchAll(PDO::FETCH_COLUMN);
 ok(!in_array($sess, $stored, true) && !in_array($tok, $stored, true), 'sessions and tokens are stored only as hashes');

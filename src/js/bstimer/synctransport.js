@@ -319,9 +319,10 @@ var syncServer = (function() {
 			});
 		}
 
-		function loginWca(token) {
+		// Sign in with a WCA (cstimer_token) or Google (access token) account; keeps the code.
+		function login(action, token) {
 			var cred = deps['credential']();
-			var params = { 'action': 'login_wca', 'token': token };
+			var params = { 'action': action, 'token': token };
 			if (cred && cred['code']) {
 				params['code'] = cred['code'];
 			}
@@ -361,7 +362,8 @@ var syncServer = (function() {
 			'versions': versions,
 			'restore': restore,
 			'createCode': createCode,
-			'loginWca': loginWca,
+			'loginWca': function(token) { return login('login_wca', token); },
+			'loginGoogle': function(token) { return login('login_google', token); },
 			'logout': logout
 		};
 	}

@@ -29,6 +29,7 @@
  *   	'sync_table_prefix' => 'bstimer_sync_',
  *   	'sync_keep_recent' => 20,
  *   	'sync_keep_days' => 120,
+ *   	'google_client_id' => '',
  *   ];
  */
 
@@ -76,6 +77,9 @@ function bstimer_config(): array
 		'sync_keep_recent' => 20,
 		// additionally keep the newest version of each UTC day within this many days
 		'sync_keep_days' => 120,
+		// Google OAuth client id (the site's googleClientId) for "Sign in with Google" in
+		// sync; empty turns it off. sync.php asks Google to confirm each token was issued to it.
+		'google_client_id' => '',
 	];
 
 	$paths = [];

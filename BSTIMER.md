@@ -21,7 +21,7 @@ bsTimer is csTimer with a few changes that are useful when you host it yourself 
 
 ### On the web
 
-Nothing syncs until the user opens Export and chooses "Show my sync code" (creates a code, uploads everything, and starts automatic sync), "Use a code from another device", or "Sign in with WCA". Only sessions and solves sync by default; "Also sync settings" adds settings, but display and input settings always stay per device.
+Nothing syncs until the user opens Export and chooses "Show my sync code" (creates a code, uploads everything, and starts automatic sync), "Use a code from another device", "Sign in with WCA" or "Sign in with Google" (after signing in to that account in the Export dialog). Only sessions and solves sync by default; "Also sync settings" adds settings, but display and input settings always stay per device.
 
 Typed-ID saves ("upload to server" with an ID you choose, via `userdata2.php`) are separate from sync: what you upload is what you download, and every save is kept as history.
 
@@ -107,6 +107,7 @@ return [
 | sync_table_prefix | Prefix for the sync tables; default `bstimer_sync_`. Tables are created on first use. |
 | sync_keep_recent | Newest synced versions always kept; default 20. |
 | sync_keep_days | Additionally keep the newest version of each UTC day within this many days; default 120. |
+| google_client_id | Your Google OAuth client id (the same as googleClientId); turns on "Sign in with Google" for sync. sync.php asks Google to confirm that each token was issued to this client. Empty (the default) turns it off. |
 
 Only hashes of codes and session tokens are stored.
 

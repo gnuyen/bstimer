@@ -19,12 +19,12 @@ vm.runInContext(fs.readFileSync(path.join(root, 'src/js/lib/lzstring.js'), 'utf8
 vm.runInContext(fs.readFileSync(path.join(root, 'src/js/bstimer/synctransport.js'), 'utf8'), ctx);
 const plain = (x) => JSON.parse(JSON.stringify(x));
 
-function server() {
+function server(opts) {
 	const db = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bssync-')), 'sync.db');
 	const calls = [];
 	const post = (params) => {
 		calls.push(plain(params));
-		const out = execFileSync('php', [path.join(root, 'test/php/sync_cli.php')], { input: JSON.stringify({ db, post: params }) });
+		const out = execFileSync('php', [path.join(root, 'test/php/sync_cli.php')], { input: JSON.stringify({ db, post: params, opts: opts || {} }) });
 		return Promise.resolve(JSON.parse(out.toString()));
 	};
 	return { db, calls, post };
@@ -168,4 +168,17 @@ test('loginWca issues a session, links to the current code, and logout clears it
 	await again.t.loginWca(token);
 	assert.equal(plain(await again.t.get()).tag, '1', 'signing in elsewhere reaches the same space');
 	assert.ok(code);
+});
+
+test('loginGoogle signs in through the server and keeps the code', async () => {
+	const srv = server({ google_client_id: 'cid', google_accounts: { tok1: 'sub-1', tok2: 'sub-1' } });
+	const x = transport(srv);
+	const code = await x.t.createCode();
+	await x.t.put(snapshot(1), null);
+	assert.equal(plain(await x.t.loginGoogle('tok1')).created, false, 'linked to the code space');
+	assert.ok(x.cred.session && x.cred.code === code);
+	const other = transport(srv);
+	await other.t.loginGoogle('tok2');
+	assert.equal(plain(await other.t.get()).tag, '1', 'a new token for the same account reaches the same space');
+	await assert.rejects(transport(srv).t.loginGoogle('bad'), /server 401/);
 });

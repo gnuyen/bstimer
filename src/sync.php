@@ -255,6 +255,87 @@ function bstimer_sync_prune(PDO $db, array $t, string $space, int $now, int $kee
 	}
 }
 
+// ---- sign-in ----
+
+function bstimer_sync_login(PDO $db, array $t, array $post, string $kind, string $identity, int $now): string
+{
+	$keyHash = bstimer_sync_key_hash($kind, $identity);
+	$existing = bstimer_sync_lookup_space($db, $t, $keyHash);
+	$space = null;
+	$created = false;
+	if (!empty($post['code'])) {
+		$target = bstimer_sync_lookup_space($db, $t, bstimer_sync_key_hash('code', bstimer_sync_normalize_code((string)$post['code'])));
+		if ($target === null) {
+			return BSTIMER_SYNC_UNAUTH;
+		}
+		if ($existing !== null && $existing !== $target) {
+			return json_encode(['retcode' => 409, 'reason' => 'account linked to another space']);
+		}
+		if ($existing === null) {
+			$stmt = $db->prepare("INSERT INTO " . $t['keys'] . " (key_hash, space_id, kind, created) VALUES (?, ?, ?, ?)");
+			$stmt->execute([$keyHash, $target, $kind, $now]);
+		}
+		$space = $target;
+		$created = false;
+	} elseif ($existing !== null) {
+		$space = $existing;
+		$created = false;
+	} else {
+		$space = bstimer_sync_new_space($db, $t, $kind, $identity, $now);
+		$created = true;
+	}
+	$session = bin2hex(random_bytes(32));
+	$stmt = $db->prepare("INSERT INTO " . $t['keys'] . " (key_hash, space_id, kind, created) VALUES (?, ?, ?, ?)");
+	$stmt->execute([bstimer_sync_key_hash('session', $session), $space, 'session', $now]);
+	return json_encode(['retcode' => 0, 'session' => $session, 'created' => $created]);
+}
+
+function bstimer_sync_google_verify(string $token, string $clientId): ?string
+{
+	if (!function_exists('curl_init')) {
+		return null;
+	}
+	$ch = curl_init('https://oauth2.googleapis.com/tokeninfo?access_token=' . rawurlencode($token));
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
+	$body = curl_exec($ch);
+	$status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+	curl_close($ch);
+	if ($body === false || $status !== 200) {
+		return null;
+	}
+	$j = json_decode((string)$body, true);
+	if (!is_array($j)) {
+		return null;
+	}
+	if (!((($j['aud'] ?? '') === $clientId) || (($j['azp'] ?? '') === $clientId))) {
+		return null;
+	}
+	if ((int)($j['expires_in'] ?? 0) <= 0) {
+		return null;
+	}
+	if (isset($j['sub']) && is_string($j['sub']) && $j['sub'] !== '') {
+		return (string)$j['sub'];
+	}
+	// csTimer's Google sign-in only asks for Drive app data, and then tokeninfo may not
+	// name the account. Drive's own stable user id works with that scope.
+	$ch = curl_init('https://www.googleapis.com/drive/v3/about?fields=user(permissionId)');
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
+	curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $token]);
+	$body = curl_exec($ch);
+	$status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+	curl_close($ch);
+	if ($body === false || $status !== 200) {
+		return null;
+	}
+	$a = json_decode((string)$body, true);
+	$pid = is_array($a) ? ($a['user']['permissionId'] ?? '') : '';
+	return (is_string($pid) && $pid !== '') ? 'drive:' . $pid : null;
+}
+
 // ---- main entry ----
 
 function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null): string
@@ -274,7 +355,7 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 		bstimer_sync_ensure_schema($db, $prefix);
 		$t = bstimer_sync_tables($db, $prefix);
 		$action = (string)($post['action'] ?? '');
-		if (!in_array($action, ['create', 'head', 'get_slices', 'missing', 'put', 'versions', 'restore', 'login_wca', 'logout', 'upload_slices'], true)) {
+		if (!in_array($action, ['create', 'head', 'get_slices', 'missing', 'put', 'versions', 'restore', 'login_wca', 'login_google', 'logout', 'upload_slices'], true)) {
 			return json_encode(['retcode' => 400, 'reason' => 'unknown action']);
 		}
 
@@ -301,35 +382,25 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 			if (!bstimer_sync_valid_token($token)) {
 				return BSTIMER_SYNC_BAD;
 			}
-			$wcaHash = bstimer_sync_key_hash('wca', $token);
-			$existing = bstimer_sync_lookup_space($db, $t, $wcaHash);
-			$space = null;
-			$created = false;
-			if (!empty($post['code'])) {
-				$target = bstimer_sync_lookup_space($db, $t, bstimer_sync_key_hash('code', bstimer_sync_normalize_code((string)$post['code'])));
-				if ($target === null) {
-					return BSTIMER_SYNC_UNAUTH;
-				}
-				if ($existing !== null && $existing !== $target) {
-					return json_encode(['retcode' => 409, 'reason' => 'account linked to another space']);
-				}
-				if ($existing === null) {
-					$stmt = $db->prepare("INSERT INTO " . $t['keys'] . " (key_hash, space_id, kind, created) VALUES (?, ?, ?, ?)");
-					$stmt->execute([$wcaHash, $target, 'wca', $now]);
-				}
-				$space = $target;
-				$created = false;
-			} elseif ($existing !== null) {
-				$space = $existing;
-				$created = false;
-			} else {
-				$space = bstimer_sync_new_space($db, $t, 'wca', $token, $now);
-				$created = true;
+			return bstimer_sync_login($db, $t, $post, 'wca', $token, $now);
+		}
+
+		// login_google: sign in with a Google token, optionally linking to a code's space
+		if ($action === 'login_google') {
+			$clientId = (string)($opts['google_client_id'] ?? '');
+			if ($clientId === '') {
+				return json_encode(['retcode' => 404, 'reason' => 'google sign-in not configured']);
 			}
-			$session = bin2hex(random_bytes(32));
-			$stmt = $db->prepare("INSERT INTO " . $t['keys'] . " (key_hash, space_id, kind, created) VALUES (?, ?, ?, ?)");
-			$stmt->execute([bstimer_sync_key_hash('session', $session), $space, 'session', $now]);
-			return json_encode(['retcode' => 0, 'session' => $session, 'created' => $created]);
+			$token = (string)($post['token'] ?? '');
+			if ($token === '' || strlen($token) > 4096) {
+				return BSTIMER_SYNC_BAD;
+			}
+			$verify = $opts['google_verify'] ?? 'bstimer_sync_google_verify';
+			$sub = $verify($token, $clientId);
+			if (!is_string($sub) || $sub === '') {
+				return BSTIMER_SYNC_UNAUTH;
+			}
+			return bstimer_sync_login($db, $t, $post, 'google', 'google:' . $sub, $now);
 		}
 
 		// everything else needs authentication
@@ -599,5 +670,6 @@ if (!defined('BSTIMER_TEST')) {
 		'prefix' => $c['sync_table_prefix'],
 		'keep_recent' => $c['sync_keep_recent'],
 		'keep_days' => $c['sync_keep_days'],
+		'google_client_id' => $c['google_client_id'] ?? '',
 	]);
 }
