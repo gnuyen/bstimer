@@ -30,6 +30,8 @@
  *   	'sync_keep_recent' => 20,
  *   	'sync_keep_days' => 120,
  *   	'google_client_id' => '',
+ *   	'apple_services_id' => 'com.example.web',
+ *   	'apple_bundle_id' => 'com.example.app',
  *   ];
  */
 
@@ -80,6 +82,14 @@ function bstimer_config(): array
 		// Google OAuth client id (the site's googleClientId) for "Sign in with Google" in
 		// sync; empty turns it off. sync.php asks Google to confirm each token was issued to it.
 		'google_client_id' => '',
+		// Sign in with Apple for sync: tokens issued to the website (Services ID) or the iOS
+		// app (bundle id) are accepted. Both empty turn it off. apple_team_id, apple_key_id
+		// and apple_key_file (the .p8, outside the web root) are only for revoking sign-ins.
+		'apple_services_id' => '',
+		'apple_bundle_id' => '',
+		'apple_team_id' => '',
+		'apple_key_id' => '',
+		'apple_key_file' => '',
 	];
 
 	$paths = [];

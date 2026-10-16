@@ -176,6 +176,59 @@ ok(call($gdb, ['action' => 'login_google', 'token' => 'tokA', 'code' => $gcode],
 $stored = $gdb->query("SELECT key_hash FROM bstimer_sync_keys")->fetchAll(PDO::FETCH_COLUMN);
 ok(!in_array('sub-1', $stored, true) && !in_array('tokA', $stored, true), 'Google ids and tokens are not stored in plain text');
 
+// ---------- Sign in with Apple ----------
+// A local RSA key plays Apple's signing key; the JWKS fetcher returns its public half.
+function b64u($s) { return rtrim(strtr(base64_encode($s), '+/', '-_'), '='); }
+$appleKey = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+$appleDet = openssl_pkey_get_details($appleKey);
+$jwks = ['keys' => [['kty' => 'RSA', 'kid' => 'k1', 'use' => 'sig', 'alg' => 'RS256', 'n' => b64u($appleDet['rsa']['n']), 'e' => b64u($appleDet['rsa']['e'])]]];
+function apple_token($claims, $kid = 'k1', $key = null) {
+	global $appleKey, $NOW;
+	$claims += ['iss' => 'https://appleid.apple.com', 'aud' => 'org.example.web', 'sub' => '001.abc', 'iat' => $NOW - 10, 'exp' => $NOW + 600];
+	$h = b64u(json_encode(['alg' => 'RS256', 'kid' => $kid]));
+	$p = b64u(json_encode($claims));
+	openssl_sign("$h.$p", $sig, $key ?? $appleKey, OPENSSL_ALGO_SHA256);
+	return "$h.$p." . b64u($sig);
+}
+$aud = ['org.example.web', 'org.example.app'];
+$fetch = function () use ($jwks) { return $jwks; };
+ok(bstimer_sync_apple_verify(apple_token([]), $aud, $NOW, $fetch) === '001.abc', 'a valid Apple token gives its account id');
+ok(bstimer_sync_apple_verify(apple_token(['aud' => 'org.example.app']), $aud, $NOW, $fetch) === '001.abc', "the app's own tokens are accepted too");
+ok(bstimer_sync_apple_verify(apple_token(['aud' => 'org.other']), $aud, $NOW, $fetch) === null, 'a token for another app is refused');
+ok(bstimer_sync_apple_verify(apple_token(['iss' => 'https://evil.example']), $aud, $NOW, $fetch) === null, 'a token from another issuer is refused');
+ok(bstimer_sync_apple_verify(apple_token(['exp' => $NOW - 1]), $aud, $NOW, $fetch) === null, 'an expired token is refused');
+ok(bstimer_sync_apple_verify(apple_token([], 'k2'), $aud, $NOW, $fetch) === null, 'a token signed with an unknown key id is refused');
+$otherKey = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+ok(bstimer_sync_apple_verify(apple_token([], 'k1', $otherKey), $aud, $NOW, $fetch) === null, 'a forged signature is refused');
+$parts = explode('.', apple_token([]));
+$tampered = $parts[0] . '.' . b64u(json_encode(['iss' => 'https://appleid.apple.com', 'aud' => 'org.example.web', 'sub' => '001.evil', 'exp' => $NOW + 600])) . '.' . $parts[2];
+ok(bstimer_sync_apple_verify($tampered, $aud, $NOW, $fetch) === null, 'a changed payload is refused');
+$none = b64u(json_encode(['alg' => 'none', 'kid' => 'k1'])) . '.' . $parts[1] . '.';
+ok(bstimer_sync_apple_verify($none, $aud, $NOW, $fetch) === null, "alg 'none' is refused");
+ok(bstimer_sync_apple_verify('garbage', $aud, $NOW, $fetch) === null, 'garbage is refused');
+
+$aopts = ['apple_audiences' => $aud, 'apple_jwks' => $fetch];
+$adb = db();
+ok(call($adb, ['action' => 'login_apple', 'token' => apple_token([])])['retcode'] === 404, 'Apple sign-in is off without audiences');
+$r = call($adb, ['action' => 'login_apple', 'token' => apple_token([])], null, $aopts);
+ok($r['retcode'] === 0 && $r['created'] === true && strlen($r['session']) >= 32, 'Apple sign-in creates a space');
+$acode = call($adb, ['action' => 'create'])['code'];
+$r = call($adb, ['action' => 'login_apple', 'token' => apple_token(['sub' => '002.app', 'aud' => 'org.example.app']), 'code' => $acode], null, $aopts);
+ok($r['retcode'] === 0 && $r['created'] === false, "signing in from the app links the Apple ID to the app's code");
+$r = call($adb, ['action' => 'login_apple', 'token' => apple_token(['sub' => '002.app'])], null, $aopts);
+put($adb, $acode, 0, [slice('apple space')]);
+ok(call($adb, ['action' => 'head', 'session' => $r['session']])['version'] === 1, 'signing in on the web reaches the same space');
+ok(call($adb, ['action' => 'login_apple', 'token' => 'garbage'], null, $aopts)['retcode'] === 401, 'a bad Apple token is refused');
+
+// add_code: a signed-in space gets a code (the iOS app keeps its server copy by code)
+$cdb = db();
+$r = call($cdb, ['action' => 'login_apple', 'token' => apple_token(['sub' => '003.x'])], null, $aopts);
+$c = call($cdb, ['action' => 'add_code', 'session' => $r['session']]);
+ok($c['retcode'] === 0 && strlen($c['code']) === 26, 'a signed-in space can get a sync code');
+put($cdb, $c['code'], 0, [slice('by code')]);
+ok(call($cdb, ['action' => 'head', 'session' => $r['session']])['version'] === 1, 'the code reaches the signed-in space');
+ok(call($cdb, ['action' => 'add_code'])['retcode'] === 401, 'add_code needs authentication');
+
 // sessions are stored hashed, and logout revokes
 $stored = $db->query("SELECT key_hash FROM bstimer_sync_keys")->fetchAll(PDO::FETCH_COLUMN);
 ok(!in_array($sess, $stored, true) && !in_array($tok, $stored, true), 'sessions and tokens are stored only as hashes');

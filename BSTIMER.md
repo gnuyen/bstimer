@@ -16,12 +16,13 @@ bsTimer is csTimer with a few changes that are useful when you host it yourself 
 - Sync between devices: the Export dialog has a "Sync" section (`src/js/bstimer/sync*.js`, `src/sync.php`). It keeps sessions and solves in step across the devices that share a sync code.
 - `src/js/bstimer/keepawake.js`: re-requests the screen wake lock when a timer starts. It works in an installed web app, where the page's own wake lock is not enough.
 - `src/js/bstimer/syncicloud.js`: syncs to the user's iCloud when the page runs inside the bsTimer iOS app.
+- `src/applelogin.php` — receives Sign in with Apple's reply and passes it to the page in the URL fragment.
 
 ## Sync
 
 ### On the web
 
-Nothing syncs until the user opens Export and chooses "Show my sync code" (creates a code, uploads everything, and starts automatic sync), "Use a code from another device", "Sign in with WCA" or "Sign in with Google" (after signing in to that account in the Export dialog). Only sessions and solves sync by default; "Also sync settings" adds settings, but display and input settings always stay per device.
+Nothing syncs until the user opens Export and chooses "Show my sync code" (creates a code, uploads everything, and starts automatic sync), "Use a code from another device", "Sign in with WCA", "Sign in with Google" or "Sign in with Apple" (after signing in to that account in the Export dialog). Only sessions and solves sync by default; "Also sync settings" adds settings, but display and input settings always stay per device.
 
 Typed-ID saves ("upload to server" with an ID you choose, via `userdata2.php`) are separate from sync: what you upload is what you download, and every save is kept as history.
 
@@ -35,9 +36,17 @@ If the device's data was replaced by an import of a csTimer file, sync asks whet
 
 In bsTimer mode the app syncs to the user's iCloud automatically, with no sign-in. It also keeps a copy on the sync server, whose code is stored in iCloud key-value storage, so other Apple devices and reinstalls use the same code. "Show my sync code (for the website)" shows that code so the website can join. The page talks to the app through `webkit.messageHandlers.bsCloud` (see `syncicloud.js`). In csTimer.net mode (chosen in the iOS Settings app) none of this runs.
 
+"Sign in with Apple (to use the website)" links the Apple ID to the app's synced data, so signing in with Apple on the website reaches it without a code. If that Apple ID already has synced data from the website, the app offers to combine them.
+
 ### Server history
 
 The server keeps the newest 20 synced versions plus one per day for 120 days (`sync_keep_recent` and `sync_keep_days`); "Earlier versions…" restores one.
+
+### Setting up Sign in with Apple
+
+1. On developer.apple.com, the app's App ID needs Sign in with Apple.
+2. Create a Services ID for the website, enable Sign in with Apple, and configure it with the app's App ID as primary, your domain, and the return URL `https://<your domain>/applelogin.php`.
+3. Set `appleServicesId` in `config.local.js` and `apple_services_id` / `apple_bundle_id` in the server settings.
 
 ## Hosting your own copy
 
@@ -67,6 +76,8 @@ var SITE_CONFIG = {
 | googleClientId | Google Drive backup sign-in. Create an OAuth client in Google Cloud and list your redirect URI. | csTimer's |
 | wcaRedirectUri, googleRedirectUri | Redirect URI sent when signing in, if it must differ from the page's own URL (for example without a trailing slash). | the page URL without its query |
 | latestAppRevision | Newest bsTimer iOS app revision; older apps get an update hint. 0 turns the check off. | `0` |
+| appleServicesId | your Sign in with Apple Services ID; empty (default) hides Sign in with Apple. | empty |
+| appleRedirectUri | the return URL registered for the Services ID; empty means `applelogin.php` next to the page. | empty |
 
 ### Server settings
 
@@ -108,6 +119,8 @@ return [
 | sync_keep_recent | Newest synced versions always kept; default 20. |
 | sync_keep_days | Additionally keep the newest version of each UTC day within this many days; default 120. |
 | google_client_id | Your Google OAuth client id (the same as googleClientId); turns on "Sign in with Google" for sync. sync.php asks Google to confirm that each token was issued to this client. Empty (the default) turns it off. |
+| apple_services_id, apple_bundle_id | identity tokens issued to the website (Services ID) or the iOS app (bundle id) are accepted; both empty turns Sign in with Apple off. sync.php checks the token's signature against Apple's published keys; no Apple key file is needed for signing in. |
+| apple_team_id, apple_key_id, apple_key_file | only for revoking sign-ins (not used yet); keep the .p8 outside the web root with mode 600. |
 
 Only hashes of codes and session tokens are stored.
 

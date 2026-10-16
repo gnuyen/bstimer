@@ -31,6 +31,10 @@ var siteConfig = (function() {
 		// Redirect URIs sent when signing in. Empty means this page's URL without its query.
 		'wcaRedirectUri': '',
 		'googleRedirectUri': '',
+		// Sign in with Apple for sync: your Services ID, and its return URL (applelogin.php
+		// next to this page if empty). Empty Services ID hides it.
+		'appleServicesId': '',
+		'appleRedirectUri': '',
 		// Newest bsTimer iOS app revision. When the app (user agent "bsTimer/<n>") is older,
 		// the page shows a short notice. 0 turns the check off.
 		'latestAppRevision': 0

@@ -61,6 +61,57 @@ function bstimer_sync_valid_token(string $t): bool
 	return preg_match('/^[0-9a-f]{64}$/', $t) === 1;
 }
 
+// ---- base64url / DER helpers for Apple identity tokens ----
+
+function bstimer_sync_b64u_decode(string $s): string|false
+{
+	$s = strtr($s, '-_', '+/');
+	$pad = strlen($s) % 4;
+	if ($pad !== 0) {
+		$s .= str_repeat('=', 4 - $pad);
+	}
+	return base64_decode($s, true);
+}
+
+function bstimer_sync_der_len(int $n): string
+{
+	if ($n < 128) {
+		return chr($n);
+	}
+	if ($n < 256) {
+		return chr(0x81) . chr($n);
+	}
+	return chr(0x82) . chr(($n >> 8) & 0xff) . chr($n & 0xff);
+}
+
+function bstimer_sync_der_int(string $bytes): string
+{
+	if (ord($bytes[0]) & 0x80) {
+		$bytes = "\x00" . $bytes;
+	}
+	return "\x02" . bstimer_sync_der_len(strlen($bytes)) . $bytes;
+}
+
+function bstimer_sync_rsa_pem(string $n, string $e): string
+{
+	// $n and $e are base64url, as in a JWKS
+	$nBytes = bstimer_sync_b64u_decode($n);
+	$eBytes = bstimer_sync_b64u_decode($e);
+	if ($nBytes === false || $eBytes === false || $nBytes === '' || $eBytes === '') {
+		return '';
+	}
+	// RSAPublicKey = SEQUENCE { INTEGER n, INTEGER e }
+	$ints = bstimer_sync_der_int($nBytes) . bstimer_sync_der_int($eBytes);
+	$rsa = "\x30" . bstimer_sync_der_len(strlen($ints)) . $ints;
+	// BIT STRING: 03, len, 00 (no unused bits), RSAPublicKey
+	$bit = "\x03" . bstimer_sync_der_len(strlen($rsa) + 1) . "\x00" . $rsa;
+	// AlgorithmIdentifier = SEQUENCE { OID 1.2.840.113549.1.1.1, NULL }
+	$alg = "\x30\x0d\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00";
+	// SubjectPublicKeyInfo = SEQUENCE { alg, bit }
+	$der = "\x30" . bstimer_sync_der_len(strlen($alg) + strlen($bit)) . $alg . $bit;
+	return "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode($der), 64, "\n") . "-----END PUBLIC KEY-----\n";
+}
+
 // ---- schema ----
 
 function bstimer_sync_ensure_schema(PDO $db, string $prefix): void
@@ -336,6 +387,97 @@ function bstimer_sync_google_verify(string $token, string $clientId): ?string
 	return (is_string($pid) && $pid !== '') ? 'drive:' . $pid : null;
 }
 
+function bstimer_sync_apple_jwks(): ?array
+{
+	if (!function_exists('curl_init')) {
+		return null;
+	}
+	$ch = curl_init('https://appleid.apple.com/auth/keys');
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
+	$body = curl_exec($ch);
+	$status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+	curl_close($ch);
+	if ($body === false || $status !== 200) {
+		return null;
+	}
+	$j = json_decode((string)$body, true);
+	return is_array($j) ? $j : null;
+}
+
+function bstimer_sync_apple_verify(string $idToken, array $audiences, int $now, ?callable $fetchJwks = null): ?string
+{
+	try {
+		$parts = explode('.', $idToken);
+		if (count($parts) !== 3) {
+			return null;
+		}
+		foreach ($parts as $p) {
+			if (!preg_match('/^[A-Za-z0-9_-]*$/', $p) || $p === '') {
+				return null;
+			}
+		}
+		$headerB64 = bstimer_sync_b64u_decode($parts[0]);
+		$payloadB64 = bstimer_sync_b64u_decode($parts[1]);
+		$sigB64 = bstimer_sync_b64u_decode($parts[2]);
+		if ($headerB64 === false || $payloadB64 === false || $sigB64 === false) {
+			return null;
+		}
+		$header = json_decode($headerB64, true);
+		$payload = json_decode($payloadB64, true);
+		if (!is_array($header) || !is_array($payload)) {
+			return null;
+		}
+		if (($header['alg'] ?? null) !== 'RS256') {
+			return null;
+		}
+		$kid = $header['kid'] ?? null;
+		if (!is_string($kid) || $kid === '') {
+			return null;
+		}
+		$jwks = $fetchJwks ? $fetchJwks() : bstimer_sync_apple_jwks();
+		if (!is_array($jwks) || !isset($jwks['keys']) || !is_array($jwks['keys'])) {
+			return null;
+		}
+		$key = null;
+		foreach ($jwks['keys'] as $k) {
+			if (is_array($k) && ($k['kid'] ?? null) === $kid && ($k['kty'] ?? null) === 'RSA') {
+				$key = $k;
+				break;
+			}
+		}
+		if ($key === null) {
+			return null;
+		}
+		$pem = bstimer_sync_rsa_pem((string)($key['n'] ?? ''), (string)($key['e'] ?? ''));
+		$pkey = ($pem === '') ? false : openssl_pkey_get_public($pem);
+		if ($pkey === false) {
+			return null;
+		}
+		if (openssl_verify($parts[0] . '.' . $parts[1], $sigB64, $pkey, OPENSSL_ALGO_SHA256) !== 1) {
+			return null;
+		}
+		if (($payload['iss'] ?? null) !== 'https://appleid.apple.com') {
+			return null;
+		}
+		$aud = $payload['aud'] ?? null;
+		if (!is_string($aud) || !in_array($aud, $audiences, true)) {
+			return null;
+		}
+		if ((int)($payload['exp'] ?? 0) <= $now) {
+			return null;
+		}
+		$sub = $payload['sub'] ?? null;
+		if (!is_string($sub) || $sub === '') {
+			return null;
+		}
+		return $sub;
+	} catch (Throwable $e) {
+		return null;
+	}
+}
+
 // ---- main entry ----
 
 function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null): string
@@ -355,7 +497,7 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 		bstimer_sync_ensure_schema($db, $prefix);
 		$t = bstimer_sync_tables($db, $prefix);
 		$action = (string)($post['action'] ?? '');
-		if (!in_array($action, ['create', 'head', 'get_slices', 'missing', 'put', 'versions', 'restore', 'login_wca', 'login_google', 'logout', 'upload_slices'], true)) {
+		if (!in_array($action, ['create', 'head', 'get_slices', 'missing', 'put', 'versions', 'restore', 'login_wca', 'login_google', 'login_apple', 'logout', 'upload_slices', 'add_code'], true)) {
 			return json_encode(['retcode' => 400, 'reason' => 'unknown action']);
 		}
 
@@ -403,10 +545,35 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 			return bstimer_sync_login($db, $t, $post, 'google', 'google:' . $sub, $now);
 		}
 
+		// login_apple: sign in with an Apple identity token, optionally linking to a code's space
+		if ($action === 'login_apple') {
+			$audiences = array_values(array_filter((array)($opts['apple_audiences'] ?? []), 'strlen'));
+			if (count($audiences) === 0) {
+				return json_encode(['retcode' => 404, 'reason' => 'apple sign-in not configured']);
+			}
+			$token = (string)($post['token'] ?? '');
+			if ($token === '' || strlen($token) > 8192) {
+				return BSTIMER_SYNC_BAD;
+			}
+			$sub = bstimer_sync_apple_verify($token, $audiences, $now, $opts['apple_jwks'] ?? null);
+			if ($sub === null) {
+				return BSTIMER_SYNC_UNAUTH;
+			}
+			return bstimer_sync_login($db, $t, $post, 'apple', 'apple:' . $sub, $now);
+		}
+
 		// everything else needs authentication
 		$space = bstimer_sync_auth($db, $t, $post);
 		if ($space === null) {
 			return BSTIMER_SYNC_UNAUTH;
+		}
+
+		// add_code: another code for this space (e.g. for the iOS app's server copy)
+		if ($action === 'add_code') {
+			$code = bstimer_sync_b32_encode(random_bytes(16));
+			$stmt = $db->prepare("INSERT INTO " . $t['keys'] . " (key_hash, space_id, kind, created) VALUES (?, ?, ?, ?)");
+			$stmt->execute([bstimer_sync_key_hash('code', $code), $space, 'code', $now]);
+			return json_encode(['retcode' => 0, 'code' => $code]);
 		}
 
 		if ($action === 'head') {
@@ -671,5 +838,6 @@ if (!defined('BSTIMER_TEST')) {
 		'keep_recent' => $c['sync_keep_recent'],
 		'keep_days' => $c['sync_keep_days'],
 		'google_client_id' => $c['google_client_id'] ?? '',
+		'apple_audiences' => array_values(array_filter([$c['apple_services_id'] ?? '', $c['apple_bundle_id'] ?? ''], 'strlen')),
 	]);
 }

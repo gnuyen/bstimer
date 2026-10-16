@@ -436,6 +436,101 @@ var bsSync = execMain(function() {
 		};
 	}
 
+	// Sign in with Apple
+	// Website: Apple posts to applelogin.php, which returns here with #bsapple=<token>&state=..
+	// App: the native sheet (bsCloud op 'appleSignIn') returns the token directly.
+	function appleEnabled() {
+		return !!(siteConfig && siteConfig['appleServicesId'] && transports['server']);
+	}
+
+	function startAppleSignIn() {
+		if (icloudOn()) {
+			cloudHandler['postMessage']({ 'op': 'appleSignIn' }).then(function(r) {
+				return finishAppleLogin(r['token']);
+			}, function(e) {
+				if (String(e).indexOf('cancel') === -1) {
+					prefs['lastError'] = String(e);
+					renderSync();
+				}
+			});
+			return;
+		}
+		var state = newUid();
+		try {
+			window['sessionStorage']['bsAppleState'] = state;
+		} catch (e) {
+			// without sessionStorage the reply can't be checked, so it will be refused
+		}
+		var redirect = siteConfig['appleRedirectUri'] || (location.origin + location.pathname.replace(/[^\/]*$/, '') + 'applelogin.php');
+		location.href = 'https://appleid.apple.com/auth/authorize?client_id=' + encodeURIComponent(siteConfig['appleServicesId'])
+			+ '&redirect_uri=' + encodeURIComponent(redirect)
+			+ '&response_type=' + encodeURIComponent('code id_token')
+			+ '&response_mode=form_post&state=' + encodeURIComponent(state);
+	}
+
+	// Read and remove Apple's reply from the URL. Returns null, {'token'} or {'error'}.
+	function takeAppleResult() {
+		var h = location.hash || '';
+		if (h.indexOf('bsapple=') === -1) {
+			return null;
+		}
+		var params = {};
+		var pairs = h.replace(/^#/, '').split('&');
+		var i;
+		for (i = 0; i < pairs.length; i++) {
+			var kv = pairs[i].split('=');
+			params[decodeURIComponent(kv[0])] = decodeURIComponent((kv[1] || '').replace(/\+/g, ' '));
+		}
+		try {
+			history.replaceState(null, '', location.pathname + location.search);
+		} catch (e) {
+			location.hash = '';
+		}
+		var expected = null;
+		try {
+			expected = window['sessionStorage']['bsAppleState'] || null;
+			delete window['sessionStorage']['bsAppleState'];
+		} catch (e) {
+			expected = null;
+		}
+		if (params['error'] || !params['bsapple']) {
+			return { 'error': params['error'] || 'no token' };
+		}
+		if (!expected || params['state'] !== expected) {
+			return { 'error': 'the sign-in did not start on this page' };
+		}
+		return { 'token': params['bsapple'] };
+	}
+
+	function finishAppleLogin(token) {
+		var server = transports['server'];
+		setStatus('Syncing…');
+		return server['loginApple'](token).catch(function(e) {
+			if (String(e).indexOf('server 409') === -1) {
+				throw e;
+			}
+			if (!confirm("This Apple ID already has synced bsTimer data. Combine this device's data with it?")) {
+				return 'cancel';
+			}
+			return server['loginApple'](token, true).then(function() {
+				// the app keeps its server copy by code (stored in iCloud for its other devices)
+				return icloudOn() ? server['addCode']() : null;
+			});
+		}).then(function(r) {
+			if (r === 'cancel') {
+				return null;
+			}
+			return resetState('server').then(function() {
+				return syncNow('manual');
+			});
+		}).then(function() {
+			renderSync();
+		}, function(e) {
+			prefs['lastError'] = String(e);
+			renderSync();
+		});
+	}
+
 	// UI
 	function updateUI() {
 		if (syncSection) {
@@ -639,6 +734,12 @@ var bsSync = execMain(function() {
 			});
 			$div.append($ggl);
 
+			if (appleEnabled()) {
+				var $apple = $('<a class="click">').text('Sign in with Apple');
+				$apple.on('click', startAppleSignIn);
+				$div.append($apple);
+			}
+
 			syncSection.append($div);
 			return;
 		}
@@ -710,6 +811,12 @@ var bsSync = execMain(function() {
 			});
 			$codeRow.append($copy);
 			$div.append($codeRow);
+		}
+
+		if (appleEnabled() && transports['server']['available']() && !(cred && cred['session'])) {
+			var $appleLink = $('<a class="click">').text(icloud ? 'Sign in with Apple (to use the website)' : 'Sign in with Apple');
+			$appleLink.on('click', startAppleSignIn);
+			$div.append($appleLink);
 		}
 
 		var $autosync = $('<label>');
@@ -1084,6 +1191,8 @@ var bsSync = execMain(function() {
 	}
 
 	// Init
+	var appleResult = takeAppleResult();
+
 	function init() {
 		// Without IndexedDB, keep going with the in-memory fallback.
 		ready = openKV().catch(function() {
@@ -1103,6 +1212,11 @@ var bsSync = execMain(function() {
 			return transports['icloud'] ? transports['icloud']['init']() : null;
 		}).then(function() {
 			isReady = true;
+			if (appleResult && appleResult['token'] && transports['server']) {
+				finishAppleLogin(appleResult['token']);
+			} else if (appleResult && appleResult['error'] && appleResult['error'] !== 'user_cancelled_authorize') {
+				logohint.push('Sign in with Apple failed: ' + appleResult['error']);
+			}
 			$(function() {
 				schedule('load', 2000);
 			});
