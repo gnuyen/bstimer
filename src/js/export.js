@@ -5,6 +5,23 @@ var exportFunc = execMain(function() {
 	var wcaLoginUrl = 'https://www.worldcubeassociation.org/oauth/authorize?client_id=' + siteConfig['wcaClientId'] + '&response_type=code&scope=public&redirect_uri=' + (siteConfig['wcaRedirectUri'] || pageUrl);
 	var gglLoginUrl = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=' + siteConfig['googleClientId'] + '&response_type=token&scope=https://www.googleapis.com/auth/drive.appdata&redirect_uri=' + (siteConfig['googleRedirectUri'] || pageUrl);
 
+	// OAuth state: a random value sent with each sign-in and checked when it returns, so a sign-in
+	// result planted by another site (login CSRF) is ignored. Kept per tab in sessionStorage.
+	var oauthExpected = false; // false: sessionStorage unavailable, so no check is possible
+	try {
+		var oauthWords = new Uint32Array(4);
+		crypto.getRandomValues(oauthWords);
+		var oauthState = Array.prototype.map.call(oauthWords, function(w) { return w.toString(36); }).join('');
+		oauthExpected = window['sessionStorage']['oauthState'] || null;
+		window['sessionStorage']['oauthState'] = oauthState;
+		wcaLoginUrl += '&state=' + oauthState;
+		gglLoginUrl += '&state=' + oauthState;
+	} catch (e) {}
+
+	function oauthStateOk(state) {
+		return oauthExpected === false || (!!oauthExpected && state === oauthExpected);
+	}
+
 	var exportDiv = $('<div />');
 	var exportTable = $('<table class="expOauth expUpDown">');
 
@@ -729,6 +746,12 @@ var exportFunc = execMain(function() {
 			inOtherFile.change(importFile.bind(inOtherFile[0], readerOther));
 		}
 
+		if ($.urlParam('code') && !oauthStateOk($.urlParam('state'))) { // not started on this page
+			$.clearUrl('code');
+		}
+		if ($.urlParam('state') !== null && !$.urlParam('code')) {
+			$.clearUrl('state');
+		}
 		if ($.urlParam('code')) { //WCA oauth
 			wcaDataTd.html(EXPORT_LOGINAUTHED);
 			$.post('oauthwca.php', {
@@ -747,12 +770,16 @@ var exportFunc = execMain(function() {
 			}).always(function() {
 				updateUserInfoFromWCA();
 				$.clearUrl('code');
+				$.urlParam('state') !== null && $.clearUrl('state');
 			});
 			showExportDiv();
 		} else {
 			updateUserInfoFromWCA();
 		}
 
+		if ($.hashParam('access_token') && !oauthStateOk($.hashParam('state'))) { // not started on this page
+			$.clearHash();
+		}
 		if ($.hashParam('access_token')) { //Google oauth
 			var access_token = $.hashParam('access_token');
 			gglDataTd.html(EXPORT_LOGINAUTHED);
