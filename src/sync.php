@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/siteconfig.php';
+require_once __DIR__ . '/ratelimit.php';
+require_once __DIR__ . '/syncapple.php';
 
 // bsTimer sync: server side for saving/restoring timer state across devices.
 
@@ -10,6 +12,7 @@ const BSTIMER_SYNC_NOTFOUND = '{"retcode":404}';
 const BSTIMER_SYNC_CONFLICT = '{"retcode":409}';
 const BSTIMER_SYNC_TOOLARGE = '{"retcode":413}';
 const BSTIMER_SYNC_SERVER = '{"retcode":500}';
+const BSTIMER_SYNC_TOO_MANY = '{"retcode":429,"reason":"too many requests"}';
 
 // Crockford base32 alphabet (no I, L, O, U)
 const BSTIMER_SYNC_B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -149,6 +152,9 @@ function bstimer_sync_ensure_schema(PDO $db, string $prefix): void
 	}
 	$db->exec("CREATE TABLE IF NOT EXISTS $versions ($sp CHAR(32), $version BIGINT, $manifest $long, $created BIGINT, PRIMARY KEY ($sp, $version))$charset");
 	$db->exec("CREATE TABLE IF NOT EXISTS $slices ($sp CHAR(32), $hash CHAR(64), $data $long, $created BIGINT NOT NULL DEFAULT 0, PRIMARY KEY ($sp, $hash))$charset");
+	// Sign in with Apple grants (refresh tokens), kept only to revoke them on deletion.
+	$apple = $quote . $prefix . 'apple' . $quote;
+	$db->exec("CREATE TABLE IF NOT EXISTS $apple ($sp CHAR(32) NOT NULL, {$quote}sub_hash{$quote} CHAR(64) NOT NULL, {$quote}client_id{$quote} VARCHAR(255) NOT NULL, {$quote}refresh_token{$quote} TEXT NOT NULL, $created BIGINT NOT NULL, PRIMARY KEY ({$quote}sub_hash{$quote}, {$quote}client_id{$quote}))$charset");
 	$done[$db] = true;
 }
 
@@ -162,6 +168,7 @@ function bstimer_sync_tables(PDO $db, string $prefix): array
 		'keys' => $quote . $prefix . 'keys' . $quote,
 		'versions' => $quote . $prefix . 'versions' . $quote,
 		'slices' => $quote . $prefix . 'slices' . $quote,
+		'apple' => $quote . $prefix . 'apple' . $quote,
 	];
 }
 
@@ -181,13 +188,30 @@ function bstimer_sync_new_space(PDO $db, array $t, string $kind, string $value, 
 	return $space;
 }
 
-function bstimer_sync_auth(PDO $db, array $t, array $post): ?string
+// A session's 'created' is refreshed (at most daily) on use, so sessions expire after $sessionDays unused.
+function bstimer_sync_auth(PDO $db, array $t, array $post, int $now = 0, int $sessionDays = 0): ?string
 {
 	if (!empty($post['code'])) {
 		return bstimer_sync_lookup_space($db, $t, bstimer_sync_key_hash('code', bstimer_sync_normalize_code((string)$post['code'])));
 	}
 	if (!empty($post['session'])) {
-		return bstimer_sync_lookup_space($db, $t, bstimer_sync_key_hash('session', (string)$post['session']));
+		$keyHash = bstimer_sync_key_hash('session', (string)$post['session']);
+		$stmt = $db->prepare("SELECT space_id, created FROM " . $t['keys'] . " WHERE key_hash = ?");
+		$stmt->execute([$keyHash]);
+		$row = $stmt->fetch(PDO::FETCH_ASSOC);
+		if ($row === false) {
+			return null;
+		}
+		if ($sessionDays > 0) {
+			if ((int)$row['created'] < $now - $sessionDays * 86400) {
+				$db->prepare("DELETE FROM " . $t['keys'] . " WHERE key_hash = ?")->execute([$keyHash]);
+				return null;
+			}
+			if ((int)$row['created'] < $now - 86400) {
+				$db->prepare("UPDATE " . $t['keys'] . " SET created = ? WHERE key_hash = ?")->execute([$now, $keyHash]);
+			}
+		}
+		return (string)$row['space_id'];
 	}
 	return null;
 }
@@ -327,7 +351,7 @@ function bstimer_sync_prune(PDO $db, array $t, string $space, int $now, int $kee
 
 // ---- sign-in ----
 
-function bstimer_sync_login(PDO $db, array $t, array $post, string $kind, string $identity, int $now): string
+function bstimer_sync_login(PDO $db, array $t, array $post, string $kind, string $identity, int $now, int $sessionDays = 0): string
 {
 	$keyHash = bstimer_sync_key_hash($kind, $identity);
 	$existing = bstimer_sync_lookup_space($db, $t, $keyHash);
@@ -353,6 +377,10 @@ function bstimer_sync_login(PDO $db, array $t, array $post, string $kind, string
 	} else {
 		$space = bstimer_sync_new_space($db, $t, $kind, $identity, $now);
 		$created = true;
+	}
+	if ($sessionDays > 0) {
+		$stmt = $db->prepare("DELETE FROM " . $t['keys'] . " WHERE kind = 'session' AND created < ?");
+		$stmt->execute([$now - $sessionDays * 86400]);
 	}
 	$session = bin2hex(random_bytes(32));
 	$stmt = $db->prepare("INSERT INTO " . $t['keys'] . " (key_hash, space_id, kind, created) VALUES (?, ?, ?, ?)");
@@ -497,6 +525,51 @@ function bstimer_sync_apple_verify(string $idToken, array $audiences, int $now, 
 	}
 }
 
+// The claims of a JWT, without checking it (only for a token already verified).
+function bstimer_sync_jwt_claims(string $token): ?array
+{
+	$parts = explode('.', $token);
+	$json = (count($parts) === 3) ? bstimer_sync_b64u_decode($parts[1]) : false;
+	$claims = ($json === false) ? null : json_decode($json, true);
+	return is_array($claims) ? $claims : null;
+}
+
+// Keep the refresh token Apple gives for a sign-in's authorization code, so the grant can be
+// revoked when the data is deleted. $exchange(string $clientId, string $authCode): ?string.
+function bstimer_sync_apple_store(PDO $db, array $t, string $space, string $identity, string $clientId, string $authCode, callable $exchange, int $now): void
+{
+	try {
+		$refresh = $exchange($clientId, $authCode);
+	} catch (Throwable $e) {
+		$refresh = null;
+	}
+	if (!is_string($refresh) || $refresh === '') {
+		return;
+	}
+	$subHash = bstimer_sync_key_hash('apple', $identity);
+	$db->prepare("DELETE FROM " . $t['apple'] . " WHERE sub_hash = ? AND client_id = ?")->execute([$subHash, $clientId]);
+	$stmt = $db->prepare("INSERT INTO " . $t['apple'] . " (space_id, sub_hash, client_id, refresh_token, created) VALUES (?, ?, ?, ?, ?)");
+	$stmt->execute([$space, $subHash, $clientId, $refresh, $now]);
+}
+
+// Revoke the stored Sign in with Apple grants of a space. $revoke(string $clientId, string $refreshToken): bool
+// does the call to Apple; when it is null (not configured) the grants are only forgotten.
+function bstimer_sync_apple_revoke_space(PDO $db, array $t, string $space, ?callable $revoke): void
+{
+	if ($revoke === null) {
+		return;
+	}
+	$stmt = $db->prepare("SELECT client_id, refresh_token FROM " . $t['apple'] . " WHERE space_id = ?");
+	$stmt->execute([$space]);
+	foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+		try {
+			$revoke((string)$row['client_id'], (string)$row['refresh_token']);
+		} catch (Throwable $e) {
+			// best effort: the data is deleted either way
+		}
+	}
+}
+
 // ---- main entry ----
 
 function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null): string
@@ -515,13 +588,25 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 	$keepDays = (int)($opts['keep_days'] ?? 120);
 	$maxSpaceBytes = (int)($opts['max_space_bytes'] ?? 67108864);
 	$spaceFull = '{"retcode":413,"reason":"space full"}';
+	$sessionDays = (int)($opts['session_days'] ?? 180);
+	$client = (string)($opts['client'] ?? '');
+	$limits = (array)($opts['rate_limits'] ?? []) + ['create' => [20, 3600], 'login' => [60, 3600], 'write' => [1200, 3600]];
 
 	try {
 		bstimer_sync_ensure_schema($db, $prefix);
 		$t = bstimer_sync_tables($db, $prefix);
 		$action = (string)($post['action'] ?? '');
-		if (!in_array($action, ['create', 'head', 'get_slices', 'missing', 'put', 'versions', 'restore', 'login_wca', 'login_google', 'login_apple', 'logout', 'upload_slices', 'add_code'], true)) {
+		if (!in_array($action, ['create', 'head', 'get_slices', 'missing', 'put', 'versions', 'restore', 'login_wca', 'login_google', 'login_apple', 'logout', 'upload_slices', 'add_code', 'delete_space'], true)) {
 			return json_encode(['retcode' => 400, 'reason' => 'unknown action']);
+		}
+
+		// per-client limits on the actions that create things or write data
+		$bucket = ['create' => 'create', 'add_code' => 'create', 'delete_space' => 'create', 'login_wca' => 'login', 'login_google' => 'login', 'login_apple' => 'login', 'put' => 'write', 'upload_slices' => 'write'][$action] ?? null;
+		if ($bucket !== null && isset($limits[$bucket])) {
+			[$limit, $window] = $limits[$bucket];
+			if (!bstimer_rate_limit($db, $prefix . 'ratelimit', $bucket, $client, (int)$limit, (int)$window, $now)) {
+				return BSTIMER_SYNC_TOO_MANY;
+			}
 		}
 
 		// create: new space + code
@@ -547,7 +632,7 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 			if (!bstimer_sync_valid_token($token)) {
 				return BSTIMER_SYNC_BAD;
 			}
-			return bstimer_sync_login($db, $t, $post, 'wca', $token, $now);
+			return bstimer_sync_login($db, $t, $post, 'wca', $token, $now, $sessionDays);
 		}
 
 		// login_google: sign in with a Google token, optionally linking to a code's space
@@ -565,7 +650,7 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 			if (!is_string($sub) || $sub === '') {
 				return BSTIMER_SYNC_UNAUTH;
 			}
-			return bstimer_sync_login($db, $t, $post, 'google', 'google:' . $sub, $now);
+			return bstimer_sync_login($db, $t, $post, 'google', 'google:' . $sub, $now, $sessionDays);
 		}
 
 		// login_apple: sign in with an Apple identity token, optionally linking to a code's space
@@ -582,11 +667,23 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 			if ($sub === null) {
 				return BSTIMER_SYNC_UNAUTH;
 			}
-			return bstimer_sync_login($db, $t, $post, 'apple', 'apple:' . $sub, $now);
+			$result = bstimer_sync_login($db, $t, $post, 'apple', 'apple:' . $sub, $now, $sessionDays);
+			// With the sign-in's authorization code, keep a refresh token so delete_space can revoke it.
+			$authCode = (string)($post['auth_code'] ?? '');
+			$exchange = $opts['apple_exchange'] ?? null;
+			$aud = bstimer_sync_jwt_claims($token)['aud'] ?? null;
+			if ($exchange !== null && preg_match('/^[A-Za-z0-9._-]{1,1024}$/', $authCode) && is_string($aud)
+				&& (json_decode($result, true)['retcode'] ?? null) === 0) {
+				$space = bstimer_sync_lookup_space($db, $t, bstimer_sync_key_hash('apple', 'apple:' . $sub));
+				if ($space !== null) {
+					bstimer_sync_apple_store($db, $t, $space, 'apple:' . $sub, $aud, $authCode, $exchange, $now);
+				}
+			}
+			return $result;
 		}
 
 		// everything else needs authentication
-		$space = bstimer_sync_auth($db, $t, $post);
+		$space = bstimer_sync_auth($db, $t, $post, $now, $sessionDays);
 		if ($space === null) {
 			return BSTIMER_SYNC_UNAUTH;
 		}
@@ -597,6 +694,18 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 			$stmt = $db->prepare("INSERT INTO " . $t['keys'] . " (key_hash, space_id, kind, created) VALUES (?, ?, ?, ?)");
 			$stmt->execute([bstimer_sync_key_hash('code', $code), $space, 'code', $now]);
 			return json_encode(['retcode' => 0, 'code' => $code]);
+		}
+
+		// delete_space: delete everything stored for this space (versions, slices, codes,
+		// sessions and linked accounts). Linked Sign in with Apple grants are revoked first.
+		if ($action === 'delete_space') {
+			bstimer_sync_apple_revoke_space($db, $t, $space, $opts['apple_revoke'] ?? null);
+			$db->beginTransaction();
+			foreach (['versions', 'slices', 'keys', 'apple'] as $name) {
+				$db->prepare("DELETE FROM " . $t[$name] . " WHERE space_id = ?")->execute([$space]);
+			}
+			$db->commit();
+			return BSTIMER_SYNC_OK;
 		}
 
 		if ($action === 'head') {
@@ -875,12 +984,30 @@ if (!defined('BSTIMER_TEST')) {
 		echo '{"retcode":500,"reason":"db connect"}';
 		exit;
 	}
-	echo bstimer_sync($_POST, $db, [
+	$opts = [
 		'prefix' => $c['sync_table_prefix'],
 		'keep_recent' => $c['sync_keep_recent'],
 		'keep_days' => $c['sync_keep_days'],
 		'max_space_bytes' => $c['sync_max_space_bytes'],
+		'session_days' => $c['sync_session_days'],
+		'client' => bstimer_rate_client((string)($_SERVER['REMOTE_ADDR'] ?? ''), $c['wca_token_salt']),
+		'rate_limits' => $c['sync_rate_limits'],
 		'google_client_id' => $c['google_client_id'] ?? '',
 		'apple_audiences' => array_values(array_filter([$c['apple_services_id'] ?? '', $c['apple_bundle_id'] ?? ''], 'strlen')),
-	]);
+	];
+	// With the Sign in with Apple key, keep each sign-in's refresh token so deleting the data revokes it.
+	$appleCfg = ['team_id' => $c['apple_team_id'] ?? '', 'key_id' => $c['apple_key_id'] ?? '', 'key_pem' => bstimer_apple_load_key($c['apple_key_file'] ?? '')];
+	if ($appleCfg['team_id'] !== '' && $appleCfg['key_id'] !== '' && $appleCfg['key_pem'] !== '') {
+		// The website's sign-in (Services ID) must send the same redirect URI it signed in with.
+		$redirect = ($c['apple_redirect_uri'] ?? '') !== '' ? $c['apple_redirect_uri']
+			: 'https://' . ($_SERVER['HTTP_HOST'] ?? '') . rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/') . '/applelogin.php';
+		$servicesId = $c['apple_services_id'] ?? '';
+		$opts['apple_exchange'] = function (string $clientId, string $authCode) use ($appleCfg, $redirect, $servicesId): ?string {
+			return bstimer_apple_exchange($appleCfg, $clientId, $authCode, $clientId === $servicesId ? $redirect : null, time());
+		};
+		$opts['apple_revoke'] = function (string $clientId, string $refreshToken) use ($appleCfg): bool {
+			return bstimer_apple_revoke($appleCfg, $clientId, $refreshToken, time());
+		};
+	}
+	echo bstimer_sync($_POST, $db, $opts);
 }

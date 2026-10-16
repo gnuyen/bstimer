@@ -81,6 +81,12 @@ function bstimer_config(): array
 		'sync_keep_days' => 120,
 		// most bytes of solve data one sync space may hold (64 MiB)
 		'sync_max_space_bytes' => 67108864,
+		// Sync sign-in sessions end after this many days without use (0: never).
+		'sync_session_days' => 180,
+		// Per-client limits as bucket => [requests, seconds]; a limit of 0 turns one off.
+		// Clients are told apart by a salted hash of their IP address.
+		'sync_rate_limits' => ['create' => [20, 3600], 'login' => [60, 3600], 'write' => [1200, 3600]],
+		'userdata_rate_limits' => ['write' => [120, 3600], 'read' => [600, 3600]],
 		// Google OAuth client id (the site's googleClientId) for "Sign in with Google" in
 		// sync; empty turns it off. sync.php asks Google to confirm each token was issued to it.
 		'google_client_id' => '',
@@ -92,6 +98,8 @@ function bstimer_config(): array
 		'apple_team_id' => '',
 		'apple_key_id' => '',
 		'apple_key_file' => '',
+		// Return URL of the website's Sign in with Apple (default: applelogin.php next to sync.php).
+		'apple_redirect_uri' => '',
 	];
 
 	$paths = [];
