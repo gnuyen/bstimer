@@ -214,7 +214,7 @@ var syncEngine = (function() {
 						// 9. reload last
 						if (needApply) { deps['reload'](); }
 						// 10. result
-						return { 'status': 'ok', 'pushed': pushed, 'applied': needApply, 'conflicts': conflicts, 'retries': retries };
+						return { 'status': 'ok', 'pushed': pushed, 'applied': needApply, 'conflicts': conflicts, 'retries': retries, 'strategy': strategy };
 					});
 				});
 			});

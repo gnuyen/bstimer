@@ -32,6 +32,7 @@ bstimer/syncmerge.js \
 bstimer/syncdata.js \
 bstimer/syncengine.js \
 bstimer/synctransport.js \
+bstimer/syncicloud.js \
 bstimer/sync.js \
 logohint.js \
 bstimer/appupdate.js \

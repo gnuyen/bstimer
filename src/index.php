@@ -35,6 +35,7 @@
   <script type="text/javascript" src="js/bstimer/syncdata.js"></script>
   <script type="text/javascript" src="js/bstimer/syncengine.js"></script>
   <script type="text/javascript" src="js/bstimer/synctransport.js"></script>
+  <script type="text/javascript" src="js/bstimer/syncicloud.js"></script>
   <script type="text/javascript" src="js/bstimer/sync.js"></script>
   <script type="text/javascript" src="js/logohint.js"></script>
   <script type="text/javascript" src="js/bstimer/appupdate.js"></script>

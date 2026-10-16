@@ -15,7 +15,9 @@ var bsSync = execMain(function() {
 	var kvDb = null;
 	var ui = { 'status': null, 'autosync': null, 'settings': null };
 	var syncSection = null;
+	var codeShown = false;
 	var ready = null;
+	var isReady = false;
 
 	// IndexedDB key-value store
 	function openKV() {
@@ -137,7 +139,25 @@ var bsSync = execMain(function() {
 
 	function setCredential(c) {
 		cred = c;
-		return kvSet('serverCred', c);
+		var icloud = transports['icloud'];
+		var p = kvSet('serverCred', c);
+		// In the app, the server code is kept in iCloud so other devices and reinstalls find it.
+		if (c && c['code'] && icloud && icloud['available']() && icloud['code']() !== c['code']) {
+			p = p.then(function() {
+				return icloud['setCode'](c['code']);
+			}).catch(function() {
+				// not fatal: written again on the next sync
+			});
+		}
+		return p;
+	}
+
+	// iOS app: iCloud transport through the native bridge (bsTimer mode only).
+	var cloudHandler = window['webkit'] && window['webkit']['messageHandlers'] && window['webkit']['messageHandlers']['bsCloud'];
+	if (cloudHandler && typeof syncICloud !== 'undefined') {
+		transports['icloud'] = syncICloud['create'](function(msg) {
+			return cloudHandler['postMessage'](msg);
+		});
 	}
 
 	if (siteConfig && typeof siteConfig['syncServer'] === 'string' && siteConfig['syncServer'] !== '') {
@@ -174,16 +194,53 @@ var bsSync = execMain(function() {
 		});
 	}
 
-	function pickTransport() {
-		var order = ['icloud', 'server', 'debug'];
+	// Every available backend, in sync order. In the app that is iCloud and then the server
+	// copy (which is what the web can reach); on the web it is just the server.
+	function activeNames() {
+		var order = ['icloud', 'debug', 'server'];
+		var out = [];
 		var i;
 		for (i = 0; i < order.length; i++) {
 			var t = transports[order[i]];
 			if (t && t['available']()) {
-				return t;
+				out.push(order[i]);
 			}
 		}
-		return null;
+		return out;
+	}
+
+	function pickTransport() {
+		var names = activeNames();
+		return names.length ? transports[names[0]] : null;
+	}
+
+	function icloudOn() {
+		return !!(transports['icloud'] && transports['icloud']['available']());
+	}
+
+	// App: use the server code stored in iCloud (another device or an earlier install made
+	// it), or store ours there. Then, if there is still no code, create one.
+	function reconcileCode() {
+		if (!icloudOn() || !transports['server']) {
+			return Promise.resolve();
+		}
+		var kv = transports['icloud']['code']();
+		if (kv && (!cred || cred['code'] !== kv)) {
+			return setCredential({ 'code': kv }).then(function() {
+				return resetState('server');
+			});
+		}
+		if (!kv && cred && cred['code']) {
+			return transports['icloud']['setCode'](cred['code']).catch(function() {});
+		}
+		if (!cred) {
+			return transports['server']['createCode']().then(function() {
+				return resetState('server');
+			}).catch(function() {
+				// offline or server down: iCloud still syncs, try again next time
+			});
+		}
+		return Promise.resolve();
 	}
 
 	// Prefs
@@ -247,22 +304,36 @@ var bsSync = execMain(function() {
 		location.reload();
 	}
 
-	function loadState() {
-		return kvGet('state').then(function(st) {
-			currentMark = (st && st['marker']) || null;
+	// Each backend has its own merge base. The server's key stays 'state' (as before
+	// iCloud existed). The import mark is shared, so one backend's sync doesn't look like an
+	// import to the next.
+	function stateKey(name) {
+		return (!name || name === 'server') ? 'state' : 'state:' + name;
+	}
+
+	function loadState(name) {
+		return Promise.all([kvGet(stateKey(name)), kvGet('mark')]).then(function(r) {
+			var st = r[0];
+			currentMark = r[1] || (st && st['marker']) || null;
 			return st;
 		});
 	}
 
-	function saveState(s) {
+	function saveState(name, s) {
+		var mark = getNextMark();
 		if (s && typeof s === 'object') {
-			s['marker'] = getNextMark();
+			s['marker'] = mark;
 		}
-		return kvSet('state', s);
+		return kvSet(stateKey(name), s).then(function() {
+			return kvSet('mark', mark);
+		});
 	}
 
-	function resetState() {
-		return kvSet('state', null);
+	function resetState(name) {
+		if (name) {
+			return kvSet(stateKey(name), null);
+		}
+		return Promise.all([kvSet('state', null), kvSet('state:icloud', null), kvSet('state:debug', null)]);
 	}
 
 	function confirmImport() {
@@ -300,7 +371,7 @@ var bsSync = execMain(function() {
 
 	function backupLocal(d) {
 		return kvGet('backups').then(function(arr) {
-			if (!arr || !Object.prototype.toString.call(arr) === '[object Array]') {
+			if (!arr || Object.prototype.toString.call(arr) !== '[object Array]') {
 				arr = [];
 			}
 			arr.push({ 'time': Date.now(), 'data': d });
@@ -330,21 +401,38 @@ var bsSync = execMain(function() {
 		return hex;
 	}
 
-	function getDeps() {
+	// run: shared by the backends of one sync, so a deletion confirmed for the first one
+	// isn't asked again for the next, and the page reloads once at the end.
+	function getDeps(name, run) {
 		return {
 			'readLocal': readLocal,
 			'saveSessionData': saveSessionData,
 			'applyLocal': applyLocal,
-			'reload': reload,
-			'loadState': loadState,
-			'saveState': saveState,
+			'reload': function() {
+				run['reload'] = true;
+			},
+			'loadState': function() {
+				return loadState(name);
+			},
+			'saveState': function(s) {
+				return saveState(name, s);
+			},
 			'markerPresent': markerPresent,
 			'setMarker': setMarker,
 			'confirmImport': confirmImport,
-			'confirmDeletion': confirmDeletion,
+			'confirmDeletion': function(info) {
+				if (run['deletionOk']) {
+					return true;
+				}
+				var ok = confirmDeletion(info);
+				if (ok) {
+					run['deletionOk'] = true;
+				}
+				return ok;
+			},
 			'backupLocal': backupLocal,
 			'newUid': newUid,
-			'transport': pickTransport()
+			'transport': transports[name]
 		};
 	}
 
@@ -421,13 +509,19 @@ var bsSync = execMain(function() {
 			return;
 		}
 		syncSection.empty();
+		if (!isReady) {
+			// iCloud status and saved credentials decide what to show; wait for them
+			syncSection.append($('<div class="bsSync">').text('Sync…'));
+			(ready || Promise.resolve()).then(renderSync, renderSync);
+			return;
+		}
 		var $div = $('<div class="bsSync">');
 		var $heading = $('<div class="bsSyncHeading">');
 		var transport = pickTransport();
 		var serverPossible = !!(transports['server'] && transports['server']['available']);
-		var icloud = !!(transports['icloud'] && transports['icloud']['available']);
+		var icloud = icloudOn();
 		var debug = !!(transports['debug'] && transports['debug']['available']);
-		var anyEver = icloud || debug || !!(siteConfig && siteConfig['syncServer']);
+		var anyEver = !!transports['icloud'] || debug || !!(siteConfig && siteConfig['syncServer']);
 
 		if (!anyEver) {
 			$heading.text('Sync');
@@ -528,7 +622,46 @@ var bsSync = execMain(function() {
 		$heading.append(' (' + transport['label'] + ')');
 		$div.append($heading);
 
-		if (cred && cred['code']) {
+		if (icloud && transports['server'] && !codeShown) {
+			var $reveal = $('<a class="click">').text('Show my sync code (for the website)');
+			$reveal.on('click', function() {
+				codeShown = true;
+				if (cred && cred['code']) {
+					renderSync();
+					return;
+				}
+				setStatus('Syncing…');
+				syncNow('manual').then(function() {
+					renderSync();
+				});
+			});
+			$div.append($reveal);
+		}
+
+		if (icloud && transports['server']) {
+			var $join = $('<a class="click">').text('Use a code from another device');
+			$join.on('click', function() {
+				var code = prompt('Enter the sync code from the website or another device. Its data is combined with this device\'s:');
+				if (!code) {
+					return;
+				}
+				setStatus('Syncing…');
+				setCredential({ 'code': code.replace(/[\s-]/g, '').toUpperCase() }).then(function() {
+					return resetState('server');
+				}).then(function() {
+					return syncNow('manual');
+				}).then(function(r) {
+					if (r && r['error'] && String(r['error']).indexOf('401') !== -1) {
+						alert('That sync code was not found.');
+					}
+					codeShown = true;
+					renderSync();
+				});
+			});
+			$div.append($join);
+		}
+
+		if (cred && cred['code'] && (!icloud || codeShown)) {
 			var $codeRow = $('<div class="bsSyncCode">');
 			$codeRow.append(document.createTextNode('Sync code: ' + groupCode(cred['code'])));
 			var $copy = $('<span class="click" title="Copy">').text('\uD83D\uDCCB');
@@ -571,10 +704,11 @@ var bsSync = execMain(function() {
 		});
 		$div.append($syncNow);
 
-		if (transport['versions']) {
+		var hist = (transports['server'] && transports['server']['available']()) ? transports['server'] : null;
+		if (hist) {
 			var $versions = $('<a class="click">').text('Earlier versions…');
 			$versions.on('click', function() {
-				transport['versions']().then(function(versions) {
+				hist['versions']().then(function(versions) {
 					var $list = $('<div class="bsSyncVersions">');
 					var i;
 					for (i = 0; i < versions.length; i++) {
@@ -588,11 +722,11 @@ var bsSync = execMain(function() {
 									return;
 								}
 								setStatus('Syncing…');
-								transport['get']().then(function(cur) {
+								hist['get']().then(function(cur) {
 									var tag = cur ? cur['tag'] : null;
-									return transport['restore'](v['version'], tag);
+									return hist['restore'](v['version'], tag);
 								}).then(function() {
-									return syncNow('manual', 'replaceLocal');
+									return syncNow('manual', 'replaceLocal', 'server');
 								}).then(function() {
 									renderSync();
 								}).catch(function(e) {
@@ -646,7 +780,7 @@ var bsSync = execMain(function() {
 		var $backups = $('<a class="click">').text('Local backups…');
 		$backups.on('click', function() {
 			kvGet('backups').then(function(arr) {
-				if (!arr || !Object.prototype.toString.call(arr) === '[object Array]' || arr.length === 0) {
+				if (!arr || Object.prototype.toString.call(arr) !== '[object Array]' || arr.length === 0) {
 					alert('No local backups yet.');
 					return;
 				}
@@ -683,7 +817,7 @@ var bsSync = execMain(function() {
 		});
 		$div.append($backups);
 
-		if (transports['server'] && transports['server']['logout']) {
+		if (!icloud && transports['server'] && transports['server']['logout']) {
 			var $stop = $('<a class="click">').text('Stop syncing on this device');
 			$stop.on('click', function() {
 				if (!confirm('Stop syncing on this device? Your data stays, but it will no longer sync.')) {
@@ -692,7 +826,7 @@ var bsSync = execMain(function() {
 				transports['server']['logout']().then(function() {
 					return setCredential(null);
 				}).then(function() {
-					return resetState();
+					return resetState('server');
 				}).then(function() {
 					renderSync();
 				}).catch(function(e) {
@@ -730,16 +864,77 @@ var bsSync = execMain(function() {
 
 	// Sync
 	// Wait for saved prefs and credentials before choosing a backend.
-	function syncNow(reason, strategy) {
+	// strategy applies to the first backend (or to `first`, if given); the ones after it merge,
+	// or are replaced by this device's data if the first one replaced anything.
+	function syncNow(reason, strategy, first) {
 		if (syncing && syncPromise) {
 			return syncPromise;
 		}
 		return (ready || Promise.resolve()).then(function() {
-			return syncNowReady(reason, strategy);
+			return syncNowReady(reason, strategy, first);
 		});
 	}
 
-	function syncNowReady(reason, strategy) {
+	// Sync each backend in turn. An apply ends the run with a reload; the rest continue
+	// after it (prefs['followUp']), so nothing runs on a page whose data was just replaced.
+	function runChain(names, strategy, run) {
+		var results = [];
+		var follow = run['follow'] || 'merge';
+		var i = 0;
+		function next() {
+			if (i >= names.length) {
+				return Promise.resolve(results);
+			}
+			var name = names[i++];
+			var strat = (results.length === 0 && !run['follow']) ? (strategy || 'merge') : follow;
+			var engine = syncEngine['create'](getDeps(name, run));
+			return engine['syncNow']({ 'settings': prefs['settings'], 'strategy': strat }).then(function(r) {
+				r['transport'] = name;
+				results.push(r);
+				if (r['status'] === 'paused') {
+					return results;
+				}
+				if (r['status'] === 'ok' && (strat !== 'merge' || r['strategy'] === 'replaceRemote')) {
+					follow = 'replaceRemote';
+				}
+				if (r['status'] === 'ok' && r['applied']) {
+					var rest = names.slice(i);
+					prefs['followUp'] = rest.length ? { 'names': rest, 'strategy': follow, 'deletionOk': !!run['deletionOk'] } : null;
+					return results;
+				}
+				return next();
+			});
+		}
+		return next();
+	}
+
+	function combine(results) {
+		if (results.length === 1) {
+			return results[0];
+		}
+		var out = { 'status': 'ok', 'pushed': false, 'applied': false, 'conflicts': 0, 'results': results };
+		var errors = [];
+		var i;
+		for (i = 0; i < results.length; i++) {
+			var r = results[i];
+			out['pushed'] = out['pushed'] || !!r['pushed'];
+			out['applied'] = out['applied'] || !!r['applied'];
+			out['conflicts'] += r['conflicts'] || 0;
+			if (r['status'] === 'paused') {
+				out['status'] = 'paused';
+				out['reason'] = r['reason'];
+			} else if (r['status'] !== 'ok') {
+				errors.push((transports[r['transport']] ? transports[r['transport']]['label'] : r['transport']) + ': ' + (r['error'] || r['status']));
+			}
+		}
+		if (errors.length && out['status'] === 'ok') {
+			out['status'] = 'error';
+			out['error'] = errors.join('; ');
+		}
+		return out;
+	}
+
+	function syncNowReady(reason, strategy, first) {
 		if (syncing && syncPromise) {
 			return syncPromise;
 		}
@@ -749,8 +944,7 @@ var bsSync = execMain(function() {
 			// also catches autosyncs scheduled before the user declined
 			return Promise.resolve({ 'status': 'paused', 'reason': 'user' });
 		}
-		var transport = pickTransport();
-		if (!transport) {
+		if (!pickTransport()) {
 			return Promise.resolve({ 'status': 'unavailable' });
 		}
 		if (timerRunning && reason !== 'manual') {
@@ -759,10 +953,35 @@ var bsSync = execMain(function() {
 		}
 		syncing = true;
 		updateUI();
+		var run = { 'reload': false, 'deletionOk': false, 'follow': null };
 		syncPromise = ready.then(function() {
-			var deps = getDeps();
-			var engine = syncEngine['create'](deps);
-			return engine['syncNow']({ 'settings': prefs['settings'], 'strategy': strategy || 'merge' });
+			return reconcileCode();
+		}).then(function() {
+			var names = activeNames();
+			var fu = prefs['followUp'];
+			prefs['followUp'] = null;
+			if (fu && !strategy && !first) {
+				// finish the run that an apply interrupted
+				run['follow'] = fu['strategy'];
+				run['deletionOk'] = !!fu['deletionOk'];
+				var rest = [];
+				var j;
+				for (j = 0; j < fu['names'].length; j++) {
+					if (names.indexOf(fu['names'][j]) !== -1) {
+						rest.push(fu['names'][j]);
+					}
+				}
+				for (j = 0; j < names.length; j++) {
+					if (rest.indexOf(names[j]) === -1) {
+						rest.push(names[j]);
+					}
+				}
+				names = rest;
+			} else if (first && names.indexOf(first) > 0) {
+				names.splice(names.indexOf(first), 1);
+				names.unshift(first);
+			}
+			return runChain(names, strategy, run).then(combine);
 		}).then(function(result) {
 			if (result['status'] === 'ok') {
 				prefs['lastSync'] = Date.now();
@@ -785,6 +1004,9 @@ var bsSync = execMain(function() {
 				}
 			}
 			return savePrefs().then(function() {
+				if (run['reload']) {
+					reload();
+				}
 				return result;
 			});
 		}).then(function(result) {
@@ -830,7 +1052,10 @@ var bsSync = execMain(function() {
 
 	// Init
 	function init() {
-		ready = openKV().then(function() {
+		// Without IndexedDB, keep going with the in-memory fallback.
+		ready = openKV().catch(function() {
+			kvAvailable = false;
+		}).then(function() {
 			return Promise.all([
 				kvGet('prefs').then(function(p) {
 					if (p && typeof p === 'object') {
@@ -842,6 +1067,9 @@ var bsSync = execMain(function() {
 				})
 			]);
 		}).then(function() {
+			return transports['icloud'] ? transports['icloud']['init']() : null;
+		}).then(function() {
+			isReady = true;
 			$(function() {
 				schedule('load', 2000);
 			});
@@ -893,7 +1121,14 @@ var bsSync = execMain(function() {
 		'attach': attach,
 		'syncNow': syncNow,
 		'setCredential': setCredential,
-		'transports': transports
+		'transports': transports,
+		// called by the iOS app when another device changed the server code in iCloud
+		'cloudCodeChanged': function(code) {
+			if (transports['icloud']) {
+				transports['icloud']['noteCode'](code);
+				schedule('change', 1000);
+			}
+		}
 	};
 	window['bsSync'] = api;
 	return api;
