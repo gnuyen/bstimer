@@ -51,5 +51,9 @@ var siteConfig = (function() {
 			cfg[key] = defaults[key];
 		}
 	}
+	// A different name needs a logo font with all its letters (css/bstimer.css).
+	if (typeof document !== 'undefined' && cfg['siteName'] !== 'csTimer') {
+		document.documentElement.className += ' bsSiteName';
+	}
 	return cfg;
 })();
