@@ -1,0 +1,99 @@
+/* bsTimer: the sync section of the Export dialog, styled like csTimer's .expOauth blocks. */
+.bsSyncSection {
+	width: 80%;
+	margin: 0 10% 5px;
+	font-size: 1.2em;
+}
+
+.bsSync {
+	display: flex;
+	flex-wrap: wrap;
+	box-sizing: border-box;
+	padding: 2px;
+	border: 1px dashed;
+	border-radius: 5px;
+	text-align: center;
+}
+
+.bsSync > * {
+	flex: 1 1 100%;
+	box-sizing: border-box;
+}
+
+.bsSyncHeading {
+	line-height: 2.5em;
+	font-weight: bold;
+}
+
+/* actions: bordered cells, two per row (like .expUpDown) */
+.bsSync > .bsSyncCell {
+	flex: 1 1 40%;
+	display: flex;
+	min-height: 2.5em;
+	margin: 1px;
+	border: 1px solid;
+	border-radius: 5px;
+}
+
+.bsSyncCell > a.click {
+	flex: 1 1 auto;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.5em;
+	border-radius: 5px;
+}
+
+.bsSync > label {
+	padding: 0.4em;
+	cursor: pointer;
+}
+
+.bsSyncMsg, .bsSyncCode {
+	padding: 0.5em;
+}
+
+.bsSyncCode {
+	font-family: monospace;
+	font-size: 1.1em;
+}
+
+.bsSyncCode .click {
+	margin-left: 0.5em;
+}
+
+.bsSyncStatus {
+	display: block;
+	padding: 0.3em;
+	font-size: 0.8em;
+}
+
+.bsSyncStatus:empty {
+	display: none;
+}
+
+.bsSyncVersions, .bsSyncBackups {
+	max-height: 12em;
+	overflow-y: auto;
+	margin: 2px 0;
+	border: 1px solid;
+	border-radius: 5px;
+}
+
+.bsSyncVersion, .bsSyncBackup {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0.3em 0.5em;
+	border-bottom: 1px dotted;
+}
+
+.bsSyncVersion:last-child, .bsSyncBackup:last-child {
+	border-bottom: none;
+}
+
+.bsSyncVersion .click, .bsSyncBackup .click {
+	padding: 0.1em 0.6em;
+	border: 1px solid;
+	border-radius: 5px;
+}

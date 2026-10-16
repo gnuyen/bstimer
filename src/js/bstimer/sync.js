@@ -599,6 +599,12 @@ var bsSync = execMain(function() {
 		return text;
 	}
 
+	// Each action link gets a bordered cell, like csTimer's .expUpDown table cells.
+	function cells($d) {
+		$d.children('a.click').wrap('<div class="bsSyncCell">');
+		return $d;
+	}
+
 	function renderSync() {
 		if (!syncSection) {
 			return;
@@ -622,7 +628,7 @@ var bsSync = execMain(function() {
 			$heading.text('Sync');
 			$div.append($heading);
 			$div.append($('<div class="bsSyncMsg">').text("Sync isn't available here yet."));
-			syncSection.append($div);
+			syncSection.append(cells($div));
 			return;
 		}
 
@@ -740,7 +746,7 @@ var bsSync = execMain(function() {
 				$div.append($apple);
 			}
 
-			syncSection.append($div);
+			syncSection.append(cells($div));
 			return;
 		}
 
@@ -748,7 +754,7 @@ var bsSync = execMain(function() {
 			$heading.text('Sync');
 			$div.append($heading);
 			$div.append($('<div class="bsSyncMsg">').text("Sync isn't available here yet."));
-			syncSection.append($div);
+			syncSection.append(cells($div));
 			return;
 		}
 
@@ -849,6 +855,7 @@ var bsSync = execMain(function() {
 			var $versions = $('<a class="click">').text('Earlier versions…');
 			$versions.on('click', function() {
 				hist['versions']().then(function(versions) {
+					$div.find('.bsSyncVersions').remove();
 					var $list = $('<div class="bsSyncVersions">');
 					var i;
 					for (i = 0; i < versions.length; i++) {
@@ -878,7 +885,7 @@ var bsSync = execMain(function() {
 							$list.append($row);
 						})(versions[i]);
 					}
-					$div.append($list);
+					$list.insertBefore($status);
 				}).catch(function(e) {
 					prefs['lastError'] = String(e);
 					renderSync();
@@ -927,6 +934,7 @@ var bsSync = execMain(function() {
 				var sorted = arr.slice().sort(function(a, b) {
 					return b['time'] - a['time'];
 				});
+				$div.find('.bsSyncBackups').remove();
 				var $list = $('<div class="bsSyncBackups">');
 				var i;
 				for (i = 0; i < sorted.length; i++) {
@@ -949,7 +957,7 @@ var bsSync = execMain(function() {
 						$list.append($row);
 					})(sorted[i]);
 				}
-				$div.append($list);
+				$list.insertBefore($status);
 			}).catch(function(e) {
 				prefs['lastError'] = String(e);
 				renderSync();
@@ -980,7 +988,7 @@ var bsSync = execMain(function() {
 		var $status = $('<span class="bsSyncStatus">');
 		$div.append($status);
 
-		syncSection.append($div);
+		syncSection.append(cells($div));
 
 		ui['status'] = $status;
 		ui['autosync'] = $autosyncCb;

@@ -9,6 +9,7 @@
   <link rel="manifest" href="cstimer.webmanifest">
 <?php include('lang/langDet.php');?>
   <link rel='stylesheet' type='text/css' href='css/style.css'>
+  <link rel='stylesheet' type='text/css' href='css/bstimer.css'>
   <script type="text/javascript" src="js/bstimer/app-auth.js"></script>
 <?php if (file_exists(__DIR__ . '/js/bstimer/config.local.js')) { ?>
   <script type="text/javascript" src="js/bstimer/config.local.js"></script>
