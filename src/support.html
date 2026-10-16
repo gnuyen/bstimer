@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bsTimer support</title>
+<style>
+	:root { color-scheme: light dark; }
+	body { font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 42em; margin: 0 auto; padding: 16px; }
+	h1 { font-size: 1.6em; }
+	h2 { font-size: 1.2em; margin-top: 1.6em; }
+	li { margin: 0.3em 0; }
+</style>
+<!-- The operator and contact come from the site settings (siteOperator, privacyContact). -->
+<script src="js/bstimer/config.local.js"></script>
+<script src="js/bstimer/config.js"></script>
+</head>
+<body>
+<h1>bsTimer support</h1>
+<p>bsTimer is a speedcubing timer: an unofficial, modified copy of <a href="https://cstimer.net">csTimer</a>
+with sync between devices, plus an iOS app that adds Bluetooth smart cube and timer support.</p>
+<p id="operator"></p>
+
+<h2 id="start">Getting started</h2>
+<p>Open <a href="./">the timer</a>. Hold and release the space bar (or the screen) to time a
+solve. Settings are under the gear button. Your data stays on the device until you sync or export it.</p>
+
+<h2 id="cube">Smart cubes and Bluetooth timers (iOS app)</h2>
+<p>iOS Safari has no Bluetooth, so the bsTimer app provides it. In the timer's settings choose the
+Bluetooth input (a smart cube or a Bluetooth timer) and pick the device from the list the app shows.</p>
+<p>The first time, allow Bluetooth when iOS asks. If you said no, turn it on in the iOS Settings app
+under Apps → bsTimer → Bluetooth.</p>
+<p>GAN, MoYu, QiYi, GiiKER and GoCube cubes are supported, as in csTimer. The cube's MAC address is read
+automatically where the cube allows it; otherwise csTimer asks for it. Turning the cube's faces keeps the
+screen awake while you scramble.</p>
+
+<h2 id="sync">Syncing between devices</h2>
+<p>In Export (the upload-arrow button), under the Sync section:</p>
+<ul>
+	<li>"Show my sync code" creates a code and starts syncing. On another device, use "Use a code from
+	another device".</li>
+	<li>Or sign in for sync with Apple ("Sign in with Apple"), Google or WCA.</li>
+</ul>
+<p>Sync merges: solves from every device are combined, deletions are respected, and it asks before a sync
+would delete solves or sessions. "Earlier versions…" restores an older synced copy; "Local backups…"
+restores this device's copy from before a sync. Settings only sync when "Also sync settings" is on.</p>
+
+<h2 id="icloud">iCloud in the iOS app</h2>
+<p>On the bsTimer website the app syncs to your iCloud automatically, with no sign-in, and keeps the app's
+settings there, so a reinstall or another iPhone comes back with your solves and settings. The iOS Settings
+app (Apps → bsTimer → Website) can switch the app to csTimer.net instead. Each website keeps its own solves,
+and iCloud sync is only for bsTimer.</p>
+
+<h2 id="move">Moving your data</h2>
+<p>"Export to file" saves everything (in the app, the share sheet offers Save to Files). "Import from file"
+in another browser, device or csTimer.net loads it. Importing replaces what's there, and sync asks whether
+to combine the import with your synced data.</p>
+
+<h2 id="delete">Deleting your data</h2>
+<p>"Delete synced data…" in the Sync section deletes the copy on the server (and, in the app, the iCloud
+copy), with its earlier versions and linked sign-ins. This device keeps its own data. To clear a device,
+clear the website's data in the browser or delete the app. See the <a href="privacy.html">privacy
+policy</a>.</p>
+
+<h2 id="contact">Contact</h2>
+<p id="contact"></p>
+<p>bsTimer is unofficial. For csTimer itself see <a href="https://cstimer.net">cstimer.net</a>.</p>
+
+<p><a href="privacy.html">Privacy policy</a></p>
+
+<script>
+(function() {
+	var cfg = window.siteConfig || {};
+	var esc = function(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
+	if (cfg['siteOperator']) {
+		document.getElementById('operator').innerHTML = 'This site is run by ' + esc(cfg['siteOperator']) + '.';
+	}
+	var c = cfg['privacyContact'];
+	if (c) {
+		var href = /^https?:\/\//.test(c) ? c : 'mailto:' + c;
+		document.getElementById('contact').innerHTML = 'Questions, problems or requests: <a href="' + esc(href) + '">' + esc(c) + '</a>.';
+	}
+})();
+</script>
+</body>
+</html>

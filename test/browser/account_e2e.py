@@ -205,9 +205,8 @@ try:
     check('web sync code is readable', isinstance(code, str) and code != '', code)
     check('web server copy exists', server({'action': 'head', 'code': code})['version'] >= 1,
           server({'action': 'head', 'code': code}))
-    check('the Sync section links the privacy page',
-          js('return $(".bsSyncPrivacy a").attr("href")') == 'privacy.html',
-          js('return $(".bsSyncPrivacy a").attr("href")'))
+    links = js('return $(".bsSyncPrivacy a").map(function(){ return $(this).attr("href"); }).get()')
+    check('the Sync section links the help and privacy pages', links == ['support.html', 'privacy.html'], links)
     click_link('Delete synced data…')
     texts = accept_alerts(20)
     check('web delete confirms and reports',

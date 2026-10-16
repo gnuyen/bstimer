@@ -1052,7 +1052,9 @@ var bsSync = execMain(function() {
 		$div.append($status);
 
 		syncSection.append(cells($div));
-		syncSection.append($('<div class="bsSyncPrivacy">').append($('<a target="_blank">').attr('href', 'privacy.html').text('Privacy')));
+		syncSection.append($('<div class="bsSyncPrivacy">').append(
+			$('<a target="_blank">').attr('href', 'support.html').text('Help'), ' · ',
+			$('<a target="_blank">').attr('href', 'privacy.html').text('Privacy')));
 
 		ui['status'] = $status;
 		ui['autosync'] = $autosyncCb;

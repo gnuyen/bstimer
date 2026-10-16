@@ -323,7 +323,13 @@ if (!defined('BSTIMER_TEST')) {
 		exit;
 	}
 	$client = bstimer_rate_client((string)($_SERVER['REMOTE_ADDR'] ?? ''), $c['wca_token_salt']);
-	if (!bstimer_userdata_rate_ok($_POST, $db, $c['userdata_table'], $client, $c['userdata_rate_limits'], time())) {
+	try {
+		$allowed = bstimer_userdata_rate_ok($_POST, $db, $c['userdata_table'], $client, $c['userdata_rate_limits'], time());
+	} catch (PDOException $e) {
+		echo '{"retcode":500}';
+		exit;
+	}
+	if (!$allowed) {
 		echo '{"retcode":429,"reason":"too many requests"}';
 		exit;
 	}
