@@ -320,6 +320,23 @@ $r = json_decode(bstimer_userdata(['id' => 'user2', 'data' => ['x']], $db, 'my_c
 $g = json_decode(bstimer_userdata(['id' => 'user2'], $db, 'my_cstimer_saves'), true);
 ok($g['retcode'] === 404, 'array data is not stored');
 
+// ---------- rate limits ----------
+$db = new PDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+$lim = ['write' => [2, 3600], 'read' => [3, 3600]];
+$w = ['id' => 'user1', 'data' => 'x'];
+ok(bstimer_userdata_rate_ok($w, $db, 'saves', 'c1', $lim, 1000) && bstimer_userdata_rate_ok($w, $db, 'saves', 'c1', $lim, 1000), 'uploads within the limit pass');
+ok(!bstimer_userdata_rate_ok($w, $db, 'saves', 'c1', $lim, 1000), 'uploads past the limit are refused');
+ok(bstimer_userdata_rate_ok(['id' => 'user1', 'datas' => 'x'], $db, 'saves', 'c2', $lim, 1000), 'another client is counted separately');
+ok(!bstimer_userdata_rate_ok(['id' => 'user1', 'datas' => 'x'], $db, 'saves', 'c1', $lim, 1000), 'batch uploads count as writes');
+$r = ['id' => 'user1', 'offset' => '0'];
+ok(bstimer_userdata_rate_ok($r, $db, 'saves', 'c1', $lim, 1000), 'reads have their own count');
+bstimer_userdata_rate_ok($r, $db, 'saves', 'c1', $lim, 1000);
+bstimer_userdata_rate_ok($r, $db, 'saves', 'c1', $lim, 1000);
+ok(!bstimer_userdata_rate_ok($r, $db, 'saves', 'c1', $lim, 1000), 'reads past the limit are refused');
+ok(bstimer_userdata_rate_ok($w, $db, 'saves', 'c1', $lim, 4600), 'the limit resets after the window');
+ok(bstimer_userdata_rate_ok($w, $db, 'saves', '', $lim, 1000), 'no client (CLI) is never limited');
+ok(bstimer_userdata_rate_ok($w, $db, 'saves', 'c9', [], 1000), 'no limits configured: always allowed');
+
 if ($failures > 0) {
 	echo "# FAILURES\n";
 	exit(1);

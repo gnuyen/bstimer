@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/siteconfig.php';
+require_once __DIR__ . '/ratelimit.php';
 
 const BSTIMER_UD_INVALID = '{"retcode":400,"reason":"invalid id"}';
 const BSTIMER_UD_CUSTOM_OFF = '{"retcode":403,"reason":"custom ids disabled"}';
@@ -296,6 +297,18 @@ function bstimer_userdata(array $post, PDO $db, string $table, array $limits = [
 	return json_encode(['retcode' => 0, 'data' => $row['save_data']]);
 }
 
+// Per-client limits: uploads count as 'write', everything else as 'read'. Limits are
+// bucket => [requests, seconds]; the counts live in "<table>_rate".
+function bstimer_userdata_rate_ok(array $post, PDO $db, string $table, string $client, array $limits, int $now): bool
+{
+	$bucket = (isset($post['data']) || isset($post['datas'])) ? 'write' : 'read';
+	if (!isset($limits[$bucket])) {
+		return true;
+	}
+	[$limit, $window] = $limits[$bucket];
+	return bstimer_rate_limit($db, $table . '_rate', $bucket, $client, (int)$limit, (int)$window, $now);
+}
+
 if (!defined('BSTIMER_TEST')) {
 	header('Content-Type: application/json');
 	$c = bstimer_config();
@@ -307,6 +320,11 @@ if (!defined('BSTIMER_TEST')) {
 		$db = new PDO($c['userdata_dsn'], $c['userdata_db_user'], $c['userdata_db_password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 	} catch (PDOException $e) {
 		echo '{"retcode":500,"reason":"db connect"}';
+		exit;
+	}
+	$client = bstimer_rate_client((string)($_SERVER['REMOTE_ADDR'] ?? ''), $c['wca_token_salt']);
+	if (!bstimer_userdata_rate_ok($_POST, $db, $c['userdata_table'], $client, $c['userdata_rate_limits'], time())) {
+		echo '{"retcode":429,"reason":"too many requests"}';
 		exit;
 	}
 	$limits = [
