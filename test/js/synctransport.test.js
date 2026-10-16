@@ -182,3 +182,22 @@ test('loginGoogle signs in through the server and keeps the code', async () => {
 	assert.equal(plain(await other.t.get()).tag, '1', 'a new token for the same account reaches the same space');
 	await assert.rejects(transport(srv).t.loginGoogle('bad'), /server 401/);
 });
+
+test('deleteSpace deletes the server copy and forgets the credential', async () => {
+	const srv = server(); const x = transport(srv);
+	const code = await x.t.createCode();
+	await x.t.put(snapshot(3), null);
+	await x.t.deleteSpace();
+	assert.equal(x.cred, null);
+	const other = transport(srv); other.cred = { code };
+	await assert.rejects(other.t.get(), /server 401/, 'the code no longer works');
+	await assert.rejects(transport(srv).t.deleteSpace(), /server 401/, 'needs a credential');
+});
+
+test("loginApple sends Apple's authorization code with the token", async () => {
+	const srv = server(); const x = transport(srv);
+	await assert.rejects(x.t.loginApple('a.b.c', true, 'ac-1'), /server 404/); // not configured in this test
+	assert.deepEqual(actions(srv, 'login_apple').map((c) => [c.token, c.auth_code]), [['a.b.c', 'ac-1']]);
+	await assert.rejects(x.t.loginApple('a.b.c', true));
+	assert.equal(actions(srv, 'login_apple')[1].auth_code, undefined, 'no code, no field');
+});

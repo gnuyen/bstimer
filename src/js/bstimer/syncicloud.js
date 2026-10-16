@@ -77,6 +77,13 @@ var syncICloud = (function() {
 			});
 		}
 
+		// Delete the synced data and the server code from iCloud (account deletion).
+		function deleteAll() {
+			return call({ 'op': 'deleteAll' }).then(function() {
+				code = null;
+			});
+		}
+
 		return {
 			'label': 'iCloud',
 			'init': init,
@@ -85,7 +92,8 @@ var syncICloud = (function() {
 			'noteCode': noteCode,
 			'setCode': setCode,
 			'get': get,
-			'put': put
+			'put': put,
+			'deleteAll': deleteAll
 		};
 	}
 

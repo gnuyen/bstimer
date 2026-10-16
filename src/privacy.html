@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bsTimer privacy policy</title>
+<style>
+	:root { color-scheme: light dark; }
+	body { font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 42em; margin: 0 auto; padding: 16px; }
+	h1 { font-size: 1.6em; }
+	h2 { font-size: 1.2em; margin-top: 1.6em; }
+	li { margin: 0.3em 0; }
+</style>
+<!-- The operator and contact come from the site settings (siteOperator, privacyContact). -->
+<script src="js/bstimer/config.local.js"></script>
+<script src="js/bstimer/config.js"></script>
+</head>
+<body>
+<h1>bsTimer privacy policy</h1>
+<p>This policy covers this website and the bsTimer iOS app when it shows this website. bsTimer is
+an unofficial, modified copy of <a href="https://cstimer.net">csTimer</a>. It has no ads, no
+analytics and no tracking, and nothing is sold or shared for marketing.</p>
+<p id="operator"></p>
+
+<h2>Stored on your device</h2>
+<p>Your solves, sessions and settings are kept in your browser's (or the app's) local storage. They
+stay there unless you use one of the features below.</p>
+
+<h2>iCloud (iOS app)</h2>
+<p>On the bsTimer website, the app syncs your sessions and solves to your private iCloud database,
+and keeps its sync code in your iCloud key-value storage. This data is in your Apple account; we
+cannot read it.</p>
+
+<h2>Sync through our server</h2>
+<p>Sync between devices stores a copy of your sessions and solves on this site's server. It starts
+when you show or enter a sync code, sign in for sync with Apple, Google or WCA, or use the iOS app on
+the bsTimer website (which keeps a server copy under a random code saved in your iCloud). "Also sync
+settings" adds your settings, except device-specific ones. We keep:</p>
+<ul>
+	<li>the synced data, with earlier versions: the newest 20 plus one a day for 120 days;</li>
+	<li>only hashed forms of sync codes, sign-in sessions and the account IDs Apple, Google or WCA
+	give us (not your name or email);</li>
+	<li>with Sign in with Apple, a token Apple issues so that we can revoke the sign-in when you
+	delete your data.</li>
+</ul>
+<p>Sign-in sessions end after 180 days without use.</p>
+
+<h2>Export to server</h2>
+<p>csTimer's "Export to server" stores the data you upload under the ID you type, or under your WCA
+account. Earlier uploads are kept so they can be restored. Anyone who knows a typed ID can read
+that backup, so use a long, unguessable ID or your WCA account.</p>
+
+<h2>Signing in</h2>
+<ul>
+	<li><b>WCA:</b> your WCA name and ID are shown on your device. Our server uses your WCA user number
+	only to work out your storage key, and does not keep it.</li>
+	<li><b>Google:</b> csTimer's Google backup is saved in your own Google Drive, in a hidden folder only
+	this site can read. When you use Google to start sync, our server keeps a hashed form of your
+	Google account ID.</li>
+	<li><b>Apple:</b> see "Sync through our server" above.</li>
+</ul>
+
+<h2>Error reports and logs</h2>
+<p>When the page hits a script error it sends the error message, file, line and timer version, with
+no identifiers. To limit abuse, the server counts requests per client using a salted hash of the IP
+address, kept for at most a day. The web host keeps standard access logs (IP address, time,
+address requested).</p>
+
+<h2>Deleting your data</h2>
+<ul>
+	<li><b>Synced data:</b> in Export, under Sync, choose "Delete synced data". This deletes the server
+	copy and all its versions, the sign-ins linked to it and, in the app, the iCloud copy, and revokes
+	Sign in with Apple. Other devices keep their own local data.</li>
+	<li><b>Data on your device:</b> clear the website's data in your browser, or delete the app.</li>
+	<li><b>Export-to-server backups</b> and anything else: contact us (below).</li>
+</ul>
+
+<h2>Changes</h2>
+<p>Changes to this policy are published on this page.</p>
+<p id="contact"></p>
+<p>Last updated: 16 October 2026.</p>
+
+<script>
+(function() {
+	var cfg = window.siteConfig || {};
+	var esc = function(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
+	if (cfg['siteOperator']) {
+		document.getElementById('operator').innerHTML = 'This site is run by ' + esc(cfg['siteOperator']) + '.';
+	}
+	var c = cfg['privacyContact'];
+	if (c) {
+		var href = /^https?:\/\//.test(c) ? c : 'mailto:' + c;
+		document.getElementById('contact').innerHTML = 'Questions or requests: <a href="' + esc(href) + '">' + esc(c) + '</a>.';
+	}
+})();
+</script>
+</body>
+</html>

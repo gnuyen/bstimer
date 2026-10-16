@@ -35,6 +35,10 @@ var siteConfig = (function() {
 		// next to this page if empty). Empty Services ID hides it.
 		'appleServicesId': '',
 		'appleRedirectUri': '',
+		// Shown on privacy.html: who runs this site, and an email address or URL for privacy
+		// requests. Also linked from the Sync section when set.
+		'siteOperator': '',
+		'privacyContact': '',
 		// Newest bsTimer iOS app revision. When the app (user agent "bsTimer/<n>") is older,
 		// the page shows a short notice. 0 turns the check off.
 		'latestAppRevision': 0

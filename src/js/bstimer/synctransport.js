@@ -321,11 +321,15 @@ var syncServer = (function() {
 
 		// Sign in with a WCA (cstimer_token) or Google (access token) account; keeps the code.
 		// noCode: sign in to the account's own space instead of linking it to the current code.
-		function login(action, token, noCode) {
+		// authCode: Sign in with Apple's authorization code, so the server can revoke the sign-in later.
+		function login(action, token, noCode, authCode) {
 			var cred = noCode ? null : deps['credential']();
 			var params = { 'action': action, 'token': token };
 			if (cred && cred['code']) {
 				params['code'] = cred['code'];
+			}
+			if (authCode) {
+				params['auth_code'] = authCode;
 			}
 			return deps['post'](params).then(function(r) {
 				if (r['retcode'] !== 0) {
@@ -365,7 +369,17 @@ var syncServer = (function() {
 			'createCode': createCode,
 			'loginWca': function(token) { return login('login_wca', token); },
 			'loginGoogle': function(token, noCode) { return login('login_google', token, noCode); },
-			'loginApple': function(token, noCode) { return login('login_apple', token, noCode); },
+			'loginApple': function(token, noCode, authCode) { return login('login_apple', token, noCode, authCode); },
+			// Delete everything the server keeps for this space, then forget the credential.
+			'deleteSpace': function() {
+				return deps['post'](auth({ 'action': 'delete_space' })).then(function(r) {
+					if (r['retcode'] !== 0) {
+						var reason = r['reason'] ? ' ' + r['reason'] : '';
+						throw new Error('server ' + r['retcode'] + reason);
+					}
+					return deps['setCredential'](null);
+				});
+			},
 			// Give the signed-in space a sync code too, and keep it with the session.
 			'addCode': function() {
 				return deps['post'](auth({ 'action': 'add_code' })).then(function(r) {

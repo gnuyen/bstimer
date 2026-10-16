@@ -446,7 +446,7 @@ var bsSync = execMain(function() {
 	function startAppleSignIn() {
 		if (icloudOn()) {
 			cloudHandler['postMessage']({ 'op': 'appleSignIn' }).then(function(r) {
-				return finishAppleLogin(r['token']);
+				return finishAppleLogin(r['token'], r['code']);
 			}, function(e) {
 				if (String(e).indexOf('cancel') === -1) {
 					prefs['lastError'] = String(e);
@@ -499,20 +499,21 @@ var bsSync = execMain(function() {
 		if (!expected || params['state'] !== expected) {
 			return { 'error': 'the sign-in did not start on this page' };
 		}
-		return { 'token': params['bsapple'] };
+		return { 'token': params['bsapple'], 'code': params['bsapplecode'] || '' };
 	}
 
-	function finishAppleLogin(token) {
+	// authCode lets the server revoke this Sign in with Apple when the data is deleted.
+	function finishAppleLogin(token, authCode) {
 		var server = transports['server'];
 		setStatus('Syncing…');
-		return server['loginApple'](token).catch(function(e) {
+		return server['loginApple'](token, false, authCode).catch(function(e) {
 			if (String(e).indexOf('server 409') === -1) {
 				throw e;
 			}
 			if (!confirm("This Apple ID already has synced bsTimer data. Combine this device's data with it?")) {
 				return 'cancel';
 			}
-			return server['loginApple'](token, true).then(function() {
+			return server['loginApple'](token, true, authCode).then(function() {
 				// the app keeps its server copy by code (stored in iCloud for its other devices)
 				return icloudOn() ? server['addCode']() : null;
 			});
@@ -985,10 +986,19 @@ var bsSync = execMain(function() {
 			$div.append($stop);
 		}
 
+		if ((transports['server'] && cred) || icloud) {
+			var $delete = $('<a class="click">').text('Delete synced data…');
+			$delete.on('click', function() {
+				deleteSyncedData(icloud);
+			});
+			$div.append($delete);
+		}
+
 		var $status = $('<span class="bsSyncStatus">');
 		$div.append($status);
 
 		syncSection.append(cells($div));
+		syncSection.append($('<div class="bsSyncPrivacy">').append($('<a target="_blank">').attr('href', 'privacy.html').text('Privacy')));
 
 		ui['status'] = $status;
 		ui['autosync'] = $autosyncCb;
@@ -1188,6 +1198,43 @@ var bsSync = execMain(function() {
 		}, delayMs);
 	}
 
+	// Delete the synced copies (server space with its versions and linked sign-ins, and the
+	// iCloud copy in the app) and turn sync off here. Data on this device is kept.
+	function deleteSyncedData(icloud) {
+		var where = icloud ? 'the copy in your iCloud and the copy on the bsTimer server' : 'the copy on the bsTimer server';
+		if (!confirm('Delete your synced data?\n\nThis deletes ' + where + ', with all earlier versions and linked sign-ins. '
+			+ 'The data on this device stays. This cannot be undone.')) {
+			return;
+		}
+		var steps = Promise.resolve();
+		if (transports['server'] && cred) {
+			steps = steps.then(function() {
+				return transports['server']['deleteSpace']();
+			});
+		}
+		if (icloud) {
+			steps = steps.then(function() {
+				return transports['icloud']['deleteAll']();
+			});
+		}
+		steps.then(function() {
+			prefs['autosync'] = false;
+			prefs['lastSync'] = 0;
+			return savePrefs();
+		}).then(function() {
+			return resetState();
+		}).then(function() {
+			return resetState('server');
+		}).then(function() {
+			alert('Your synced data was deleted, and sync is off on this device.\n\n'
+				+ 'Other devices still have their own data. Turn sync off on them too, or they will upload it again.');
+			renderSync();
+		}).catch(function(e) {
+			prefs['lastError'] = String(e);
+			renderSync();
+		});
+	}
+
 	// Attach
 	function attach(exportDiv, typedIdRow) {
 		if (siteConfig['customIdSync'] === false && typedIdRow) {
@@ -1221,7 +1268,7 @@ var bsSync = execMain(function() {
 		}).then(function() {
 			isReady = true;
 			if (appleResult && appleResult['token'] && transports['server']) {
-				finishAppleLogin(appleResult['token']);
+				finishAppleLogin(appleResult['token'], appleResult['code']);
 			} else if (appleResult && appleResult['error'] && appleResult['error'] !== 'user_cancelled_authorize') {
 				logohint.push('Sign in with Apple failed: ' + appleResult['error']);
 			}

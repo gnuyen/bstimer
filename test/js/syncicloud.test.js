@@ -112,3 +112,13 @@ test('noteCode updates the remembered code without calling the bridge', async ()
 	assert.equal(t.code(), 'B');
 	assert.equal(b.sent.length, 1);
 });
+
+test('deleteAll asks the app to delete the iCloud data and forgets the code', async () => {
+	const b = fakeBridge({ status: { available: true, code: 'A' }, deleteAll: true });
+	const t = load().create(b.call);
+	await t.init();
+	await t.deleteAll();
+	assert.deepEqual(b.sent[1], { op: 'deleteAll' });
+	assert.equal(t.code(), null);
+	await assert.rejects(load().create(fakeBridge({ deleteAll: new Error('offline') }).call).deleteAll());
+});
