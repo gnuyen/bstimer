@@ -278,3 +278,14 @@ test('after syncing both ways two devices converge to the same snapshot', () => 
 	assert.equal(cloud2.properties.k, 2);
 	assert.ok(cloud2.sessions.n);
 });
+
+test('key order never matters: reordered meta is not a change or a conflict', () => {
+	const base = snap({ s: { meta: { name: 'x', opt: { a: 1, b: 2 }, rank: 1 }, solves: [solve(1)] } });
+	const l = { sessions: { s: { meta: { rank: 1, opt: { b: 2, a: 1 }, name: 'x' }, solves: clone(base.sessions.s.solves) } }, properties: {} };
+	const r = clone(base);
+	const m = merge(base, l, r);
+	assert.equal(m.conflicts, 0);
+	assert.equal(sm.canon(m.snapshot), sm.canon(r));
+	assert.equal(sm.canon({ b: 1, a: [1, { d: 2, c: 3 }] }), sm.canon({ a: [1, { c: 3, d: 2 }], b: 1 }));
+	assert.notEqual(sm.canon([1, 2]), sm.canon([2, 1]), 'array order still matters');
+});

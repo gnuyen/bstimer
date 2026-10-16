@@ -67,7 +67,7 @@ test("toSnapshot in 'settings' mode keeps shared settings and drops device-local
 
 test('isDeviceLocal covers session bookkeeping, input and bluetooth, layout and display', () => {
 	for (const k of ['session', 'sessionData', 'sessionN', 'input', 'giiMacMap', 'giiSolved', 'vrcSpeed', 'lang',
-		'zoom', 'view', 'wndStat', 'toolHide', 'bgImgS', 'toolsfunc', 'NTools', 'atexpi', 'expp', 'scrType', 'scrAlign']) {
+		'zoom', 'view', 'wndStat', 'toolHide', 'bgImgS', 'toolsfunc', 'NTools', 'atexpi', 'expp', 'scrType', 'scrAlign', 'bsSyncMark']) {
 		assert.ok(sd.isDeviceLocal(k), k);
 	}
 	for (const k of ['useMilli', 'timeFormat', 'statthres', 'trim', 'colcube', 'phases', 'useIns', 'preScr']) {
@@ -181,4 +181,29 @@ test('linkSessions keeps other sessionData fields (stat, date, opt)', () => {
 	const data = JSON.parse(plain(sd.linkSessions(exportObj, properties, null, newUid)).sessionData);
 	assert.deepEqual(data['1'].opt, { phases: 2 });
 	assert.ok(data['1'].stat && data['1'].date);
+});
+
+// ---------- untouched default sessions ----------
+
+test("toSnapshot leaves out untouched default sessions (empty, numeric name, no options)", () => {
+	const { exportObj, properties } = cstimer([
+		{ name: '3x3', uid: 'a', solves: [solve(1)] },
+		{ name: 2, uid: 'b', solves: [] },            // csTimer default: number
+		{ name: '3', uid: 'c', solves: [] },          // numeric string
+		{ name: 'OH', uid: 'd', solves: [] },         // named by the user: synced
+		{ name: 5, uid: 'e', solves: [solve(2)] },    // has solves: synced
+		{ name: 6, uid: 'f', solves: [], opt: { scrType: '444wca' } }, // has options: synced
+	]);
+	const s = plain(sd.toSnapshot(exportObj, properties, 'off'));
+	assert.deepEqual(Object.keys(s.sessions).sort(), ['a', 'd', 'e', 'f']);
+});
+
+test('fromSnapshot with no sessions creates one empty default session', () => {
+	const local = cstimer([{ name: 1, uid: 'x', solves: [] }]).properties;
+	const r = plain(sd.fromSnapshot({ sessions: {}, properties: {} }, local, 'off'));
+	assert.equal(r.properties.sessionN, 1);
+	const d = JSON.parse(r.properties.sessionData);
+	assert.equal(d['1'].name, 1);
+	assert.ok(!d['1'].uid, 'gets a uid when it is next linked');
+	assert.deepEqual(r.exportObj.session1, []);
 });

@@ -5,9 +5,34 @@ var syncMerge = (function() {
 	function clone(x) {
 		return x === undefined ? undefined : JSON.parse(JSON.stringify(x));
 	}
+	// JSON text with object keys sorted, so equal data compares equal whatever the key order
+	function canon(x) {
+		if (x === null || typeof x !== 'object') {
+			return JSON.stringify(x);
+		}
+		if (Object.prototype.toString.call(x) === '[object Array]') {
+			var parts = [];
+			for (var i = 0; i < x.length; i++) {
+				parts.push(x[i] === undefined ? 'null' : canon(x[i]));
+			}
+			return '[' + parts.join(',') + ']';
+		}
+		var keys = [];
+		for (var k in x) {
+			if (Object.prototype.hasOwnProperty.call(x, k) && x[k] !== undefined) {
+				keys.push(k);
+			}
+		}
+		keys.sort();
+		var out = [];
+		for (var j = 0; j < keys.length; j++) {
+			out.push(JSON.stringify(keys[j]) + ':' + canon(x[keys[j]]));
+		}
+		return '{' + out.join(',') + '}';
+	}
 	// JSON equality (inputs are JSON data)
 	function eq(a, b) {
-		return JSON.stringify(a) === JSON.stringify(b);
+		return canon(a) === canon(b);
 	}
 	// solve identity: timestamp | raw time | scramble
 	function solveKey(solve) {
@@ -225,5 +250,5 @@ var syncMerge = (function() {
 		}
 		return { 'snapshot': clone({ 'sessions': merged, 'properties': outProps }), 'conflicts': conflicts['n'] };
 	}
-	return { 'merge': merge, 'solveKey': solveKey };
+	return { 'merge': merge, 'solveKey': solveKey, 'canon': canon };
 })();

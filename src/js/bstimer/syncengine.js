@@ -167,7 +167,7 @@ var syncEngine = (function() {
 								pushed = false;
 								return { 'merged': merged, 'localSnap': localSnap, 'remoteSnap': remoteSnap };
 							}
-							if (remoteSnap === null || JSON.stringify(merged) !== JSON.stringify(remoteSnap)) {
+							if (remoteSnap === null || syncMerge['canon'](merged) !== syncMerge['canon'](remoteSnap)) {
 								return p(deps['transport']['put'](merged, remote ? remote['tag'] : null)).then(function(res) {
 									if (res['conflict']) {
 										retries++;
@@ -194,8 +194,8 @@ var syncEngine = (function() {
 					merged = up['merged'];
 					localSnap = up['localSnap'];
 					// 6. does the local side need the merged result?
-					needApply = JSON.stringify(merged['sessions']) !== JSON.stringify(localSnap['sessions']) ||
-						(mode === 'settings' && JSON.stringify(merged['properties']) !== JSON.stringify(localSnap['properties']));
+					needApply = syncMerge['canon'](merged['sessions']) !== syncMerge['canon'](localSnap['sessions']) ||
+						(mode === 'settings' && syncMerge['canon'](merged['properties']) !== syncMerge['canon'](localSnap['properties']));
 					// 7. apply before saving state; 8-10 only after a successful upload
 					var applied = p(undefined);
 					if (needApply) {

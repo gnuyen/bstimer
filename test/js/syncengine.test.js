@@ -346,3 +346,18 @@ test("strategy 'replaceRemote' (replace synced copy) makes the cloud equal to th
 	assert.equal(r.status, 'ok');
 	assert.equal(Object.keys(cl.data.sessions).length, 1);
 });
+
+test('a cloud copy that differs only in key order is not re-uploaded', async () => {
+	const cl = cloud();
+	const dev = device([{ name: 'A', solves: [solve(1)] }]);
+	await sync(dev, cl);
+	// the server hands the snapshot back with keys in another order
+	const uid = Object.keys(cl.data.sessions)[0];
+	const m = cl.data.sessions[uid].meta;
+	cl.data.sessions[uid].meta = { rank: m.rank, opt: m.opt, name: m.name };
+	const puts = cl.puts;
+	const r = await sync(dev, cl);
+	assert.equal(r.pushed, false);
+	assert.equal(r.applied, false);
+	assert.equal(cl.puts, puts);
+});

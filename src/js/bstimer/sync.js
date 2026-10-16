@@ -2,6 +2,7 @@
 
 var bsSync = execMain(function() {
 	var prefs = { 'autosync': true, 'settings': 'off', 'lastSync': 0, 'lastError': '' };
+	var cred = null;
 	var timerRunning = false;
 	var pendingSync = false;
 	var syncing = false;
@@ -13,6 +14,8 @@ var bsSync = execMain(function() {
 	var kvAvailable = false;
 	var kvDb = null;
 	var ui = { 'status': null, 'autosync': null, 'settings': null };
+	var syncSection = null;
+	var ready = null;
 
 	// IndexedDB key-value store
 	function openKV() {
@@ -66,20 +69,39 @@ var bsSync = execMain(function() {
 	}
 
 	// Marker
-	function markerPresent() {
-		try {
-			return localStorage['bsSyncMarker'] === '1';
-		} catch (e) {
-			return false;
+	// Import detection: the sync state remembers a random mark that is also stored as a
+	// csTimer setting (bsSyncMark, never synced). csTimer's own import replaces the
+	// settings, so after an import the two differ. (localStorage keys can't be used:
+	// csTimer deletes unknown localStorage keys on every load.) The mark changes after
+	// every successful sync, so re-importing an older exported file is detected too.
+	var currentMark = null;
+	var nextMark = null;
+	var markWritten = false;
+
+	function getNextMark() {
+		if (!nextMark) {
+			nextMark = newUid();
 		}
+		return nextMark;
+	}
+
+	function markerPresent() {
+		if (!currentMark) {
+			return true; // state from before marks existed
+		}
+		return kernel.getProp('bsSyncMark') === currentMark;
 	}
 
 	function setMarker() {
-		try {
-			localStorage['bsSyncMarker'] = '1';
-		} catch (e) {
-			// ignore
+		var mark = getNextMark();
+		// After an apply the mark is already in the written settings. Calling setProp then
+		// would make csTimer's session manager write its stale session list back.
+		if (!markWritten) {
+			kernel.setProp('bsSyncMark', mark);
 		}
+		currentMark = mark;
+		nextMark = null;
+		markWritten = false;
 	}
 
 	// Transports
@@ -112,6 +134,45 @@ var bsSync = execMain(function() {
 			});
 		}
 	};
+
+	function setCredential(c) {
+		cred = c;
+		return kvSet('serverCred', c);
+	}
+
+	if (siteConfig && typeof siteConfig['syncServer'] === 'string' && siteConfig['syncServer'] !== '') {
+		transports['server'] = syncServer['create']({
+			'post': function(params) {
+				return fetch(siteConfig['syncServer'], {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+					body: $.param(params),
+					credentials: 'same-origin'
+				}).then(function(response) {
+					return response.json();
+				});
+			},
+			'sha256': function(s) {
+				return $.sha256(s);
+			},
+			'compress': function(s) {
+				return LZString.compressToEncodedURIComponent(s);
+			},
+			'decompress': function(s) {
+				return LZString.decompressFromEncodedURIComponent(s);
+			},
+			'cacheGet': function(h) {
+				return kvGet('slice:' + h);
+			},
+			'cacheSet': function(h, d) {
+				return kvSet('slice:' + h, d);
+			},
+			'credential': function() {
+				return cred;
+			},
+			'setCredential': setCredential
+		});
+	}
 
 	function pickTransport() {
 		var order = ['icloud', 'server', 'debug'];
@@ -161,7 +222,7 @@ var bsSync = execMain(function() {
 
 	function applyLocal(d) {
 		var keep = {};
-		var keys = ['devData', 'wcaData', 'gglData', 'locData', 'bsSyncMarker'];
+		var keys = ['devData', 'wcaData', 'gglData', 'locData'];
 		var i;
 		for (i = 0; i < keys.length; i++) {
 			var k = keys[i];
@@ -175,6 +236,8 @@ var bsSync = execMain(function() {
 				localStorage[k2] = keep[k2];
 			}
 		}
+		d['properties']['bsSyncMark'] = getNextMark();
+		markWritten = true;
 		localStorage['properties'] = mathlib.obj2str(d['properties']);
 		kernel.loadProp();
 		return storage.importAll(d['exportObj']);
@@ -185,11 +248,21 @@ var bsSync = execMain(function() {
 	}
 
 	function loadState() {
-		return kvGet('state');
+		return kvGet('state').then(function(st) {
+			currentMark = (st && st['marker']) || null;
+			return st;
+		});
 	}
 
 	function saveState(s) {
+		if (s && typeof s === 'object') {
+			s['marker'] = getNextMark();
+		}
 		return kvSet('state', s);
+	}
+
+	function resetState() {
+		return kvSet('state', null);
 	}
 
 	function confirmImport() {
@@ -205,6 +278,36 @@ var bsSync = execMain(function() {
 					resolve('cancel');
 				}
 			}
+		});
+	}
+
+	function confirmDeletion(info) {
+		var parts = [];
+		if (info['localSolvesRemoved']) {
+			parts.push(info['localSolvesRemoved'] + ' solves on this device');
+		}
+		if (info['cloudSolvesRemoved']) {
+			parts.push(info['cloudSolvesRemoved'] + ' solves in the synced copy');
+		}
+		if (info['localSessionsRemoved']) {
+			parts.push(info['localSessionsRemoved'] + ' session' + (info['localSessionsRemoved'] === 1 ? '' : 's') + ' on this device');
+		}
+		if (info['cloudSessionsRemoved']) {
+			parts.push(info['cloudSessionsRemoved'] + ' session' + (info['cloudSessionsRemoved'] === 1 ? '' : 's') + ' in the synced copy');
+		}
+		return confirm('bsTimer sync would delete ' + parts.join(', ') + '.\n\nOK: continue.\nCancel: pause sync and keep everything.');
+	}
+
+	function backupLocal(d) {
+		return kvGet('backups').then(function(arr) {
+			if (!arr || !Object.prototype.toString.call(arr) === '[object Array]') {
+				arr = [];
+			}
+			arr.push({ 'time': Date.now(), 'data': d });
+			while (arr.length > 5) {
+				arr.shift();
+			}
+			return kvSet('backups', arr);
 		});
 	}
 
@@ -238,6 +341,8 @@ var bsSync = execMain(function() {
 			'markerPresent': markerPresent,
 			'setMarker': setMarker,
 			'confirmImport': confirmImport,
+			'confirmDeletion': confirmDeletion,
+			'backupLocal': backupLocal,
 			'newUid': newUid,
 			'transport': pickTransport()
 		};
@@ -245,7 +350,56 @@ var bsSync = execMain(function() {
 
 	// UI
 	function updateUI() {
-		if (!ui['status']) { return; }
+		if (syncSection) {
+			renderSync();
+		}
+	}
+
+	function groupCode(code) {
+		var out = '';
+		var i;
+		for (i = 0; i < code.length; i++) {
+			if (i > 0 && i % 4 === 0) {
+				out += '-';
+			}
+			out += code.charAt(i);
+		}
+		return out;
+	}
+
+	function copyText(text) {
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			return navigator.clipboard.writeText(text);
+		}
+		return new Promise(function(resolve, reject) {
+			var ta = document.createElement('textarea');
+			ta.value = text;
+			ta.style.position = 'fixed';
+			ta.style.left = '-9999px';
+			document.body.appendChild(ta);
+			ta.select();
+			var ok = false;
+			try {
+				ok = document.execCommand('copy');
+			} catch (e) {
+				ok = false;
+			}
+			document.body.removeChild(ta);
+			if (ok) {
+				resolve();
+			} else {
+				reject(new Error('copy failed'));
+			}
+		});
+	}
+
+	function setStatus(msg) {
+		if (ui['status']) {
+			ui['status'].text(msg);
+		}
+	}
+
+	function statusText() {
 		var text;
 		if (syncing) {
 			text = 'Syncing…';
@@ -259,13 +413,341 @@ var bsSync = execMain(function() {
 				text += ' — ' + prefs['lastError'];
 			}
 		}
-		ui['status'].text(text);
+		return text;
+	}
+
+	function renderSync() {
+		if (!syncSection) {
+			return;
+		}
+		syncSection.empty();
+		var $div = $('<div class="bsSync">');
+		var $heading = $('<div class="bsSyncHeading">');
+		var transport = pickTransport();
+		var serverPossible = !!(transports['server'] && transports['server']['available']);
+		var icloud = !!(transports['icloud'] && transports['icloud']['available']);
+		var debug = !!(transports['debug'] && transports['debug']['available']);
+		var anyEver = icloud || debug || !!(siteConfig && siteConfig['syncServer']);
+
+		if (!anyEver) {
+			$heading.text('Sync');
+			$div.append($heading);
+			$div.append($('<div class="bsSyncMsg">').text("Sync isn't available here yet."));
+			syncSection.append($div);
+			return;
+		}
+
+		if (!transport && serverPossible && !icloud && !cred) {
+			$heading.text('Sync between devices');
+			$div.append($heading);
+
+			var $show = $('<a class="click">').text('Show my sync code');
+			$show.on('click', function() {
+				setStatus('Syncing…');
+				transports['server']['createCode']().then(function() {
+					return resetState();
+				}).then(function() {
+					return syncNow('manual');
+				}).then(function() {
+					renderSync();
+				}).catch(function(e) {
+					prefs['lastError'] = String(e);
+					renderSync();
+				});
+			});
+			$div.append($show);
+
+			var $use = $('<a class="click">').text('Use a code from another device');
+			$use.on('click', function() {
+				var code = prompt('Enter the sync code from your other device:');
+				if (!code) {
+					return;
+				}
+				setStatus('Syncing…');
+				setCredential({ 'code': code.replace(/[\s-]/g, '').toUpperCase() }).then(function() {
+					return resetState();
+				}).then(function() {
+					return syncNow('manual');
+				}).then(function() {
+					renderSync();
+				}).catch(function(e) {
+					var msg = String(e);
+					if (msg.indexOf('server 401') !== -1) {
+						setCredential(null).then(function() {
+							alert('That sync code was not found.');
+						});
+					}
+					prefs['lastError'] = msg;
+					renderSync();
+				});
+			});
+			$div.append($use);
+
+			var $wca = $('<a class="click">').text('Sign in with WCA');
+			$wca.on('click', function() {
+				var token = null;
+				try {
+					var wca = JSON.parse(localStorage['wcaData'] || 'null');
+					if (wca && wca['cstimer_token']) {
+						token = wca['cstimer_token'];
+					}
+				} catch (e) {
+					token = null;
+				}
+				if (!token) {
+					alert('Sign in with your WCA account above first, then press this again.');
+					return;
+				}
+				setStatus('Syncing…');
+				transports['server']['loginWca'](token).then(function() {
+					return resetState();
+				}).then(function() {
+					return syncNow('manual');
+				}).then(function() {
+					renderSync();
+				}).catch(function(e) {
+					prefs['lastError'] = String(e);
+					renderSync();
+				});
+			});
+			$div.append($wca);
+
+			syncSection.append($div);
+			return;
+		}
+
+		if (!transport) {
+			$heading.text('Sync');
+			$div.append($heading);
+			$div.append($('<div class="bsSyncMsg">').text("Sync isn't available here yet."));
+			syncSection.append($div);
+			return;
+		}
+
+		$heading.text('Sync');
+		$heading.append(' (' + transport['label'] + ')');
+		$div.append($heading);
+
+		if (cred && cred['code']) {
+			var $codeRow = $('<div class="bsSyncCode">');
+			$codeRow.append(document.createTextNode('Sync code: ' + groupCode(cred['code'])));
+			var $copy = $('<span class="click" title="Copy">').text('\uD83D\uDCCB');
+			$copy.on('click', function() {
+				copyText(cred['code']).then(function() {
+					$copy.text('Copied');
+					setTimeout(function() {
+						$copy.text('\uD83D\uDCCB');
+					}, 2000);
+				}).catch(function() {
+					// ignore
+				});
+			});
+			$codeRow.append($copy);
+			$div.append($codeRow);
+		}
+
+		var $autosync = $('<label>');
+		var $autosyncCb = $('<input type="checkbox">');
+		$autosyncCb.prop('checked', prefs['autosync']);
+		$autosync.append($autosyncCb);
+		$autosync.append(document.createTextNode(' Sync automatically'));
+		$div.append($autosync);
+
+		var $settings = $('<label>');
+		var $settingsCb = $('<input type="checkbox">');
+		$settingsCb.prop('checked', prefs['settings'] === 'settings');
+		$settings.append($settingsCb);
+		$settings.append(document.createTextNode(' Also sync settings (display and input settings stay per device)'));
+		$div.append($settings);
+
+		var $syncNow = $('<a class="click">').text('Sync now');
+		$syncNow.on('click', function() {
+			syncNow('manual').then(function() {
+				renderSync();
+			}).catch(function(e) {
+				prefs['lastError'] = String(e);
+				renderSync();
+			});
+		});
+		$div.append($syncNow);
+
+		if (transport['versions']) {
+			var $versions = $('<a class="click">').text('Earlier versions…');
+			$versions.on('click', function() {
+				transport['versions']().then(function(versions) {
+					var $list = $('<div class="bsSyncVersions">');
+					var i;
+					for (i = 0; i < versions.length; i++) {
+						(function(v) {
+							var $row = $('<div class="bsSyncVersion">');
+							$row.append(document.createTextNode(new Date(v['created'] * 1000).toLocaleString()));
+							var $restore = $('<a class="click">').text('Restore');
+							$restore.on('click', function() {
+								var date = new Date(v['created'] * 1000).toLocaleString();
+								if (!confirm('Restore the synced copy from ' + date + '? Your devices will receive it on their next sync.')) {
+									return;
+								}
+								setStatus('Syncing…');
+								transport['get']().then(function(cur) {
+									var tag = cur ? cur['tag'] : null;
+									return transport['restore'](v['version'], tag);
+								}).then(function() {
+									return syncNow('manual', 'replaceLocal');
+								}).then(function() {
+									renderSync();
+								}).catch(function(e) {
+									prefs['lastError'] = String(e);
+									renderSync();
+								});
+							});
+							$row.append($restore);
+							$list.append($row);
+						})(versions[i]);
+					}
+					$div.append($list);
+				}).catch(function(e) {
+					prefs['lastError'] = String(e);
+					renderSync();
+				});
+			});
+			$div.append($versions);
+		}
+
+		var $download = $('<a class="click">').text('Download synced copy');
+		$download.on('click', function() {
+			if (!confirm('Replace this device\'s data with the synced copy?')) {
+				return;
+			}
+			setStatus('Syncing…');
+			syncNow('manual', 'replaceLocal').then(function() {
+				renderSync();
+			}).catch(function(e) {
+				prefs['lastError'] = String(e);
+				renderSync();
+			});
+		});
+		$div.append($download);
+
+		var $replace = $('<a class="click">').text('Replace synced copy with this device');
+		$replace.on('click', function() {
+			if (!confirm('Replace the synced copy with this device\'s data?')) {
+				return;
+			}
+			setStatus('Syncing…');
+			syncNow('manual', 'replaceRemote').then(function() {
+				renderSync();
+			}).catch(function(e) {
+				prefs['lastError'] = String(e);
+				renderSync();
+			});
+		});
+		$div.append($replace);
+
+		var $backups = $('<a class="click">').text('Local backups…');
+		$backups.on('click', function() {
+			kvGet('backups').then(function(arr) {
+				if (!arr || !Object.prototype.toString.call(arr) === '[object Array]' || arr.length === 0) {
+					alert('No local backups yet.');
+					return;
+				}
+				var sorted = arr.slice().sort(function(a, b) {
+					return b['time'] - a['time'];
+				});
+				var $list = $('<div class="bsSyncBackups">');
+				var i;
+				for (i = 0; i < sorted.length; i++) {
+					(function(bk) {
+						var $row = $('<div class="bsSyncBackup">');
+						$row.append(document.createTextNode(new Date(bk['time']).toLocaleString()));
+						var $restore = $('<a class="click">').text('Restore');
+						$restore.on('click', function() {
+							if (!confirm('Restore this local backup? Your current data will be replaced.')) {
+								return;
+							}
+							applyLocal(bk['data']).then(function() {
+								location.reload();
+							}).catch(function(e) {
+								prefs['lastError'] = String(e);
+								renderSync();
+							});
+						});
+						$row.append($restore);
+						$list.append($row);
+					})(sorted[i]);
+				}
+				$div.append($list);
+			}).catch(function(e) {
+				prefs['lastError'] = String(e);
+				renderSync();
+			});
+		});
+		$div.append($backups);
+
+		if (transports['server'] && transports['server']['logout']) {
+			var $stop = $('<a class="click">').text('Stop syncing on this device');
+			$stop.on('click', function() {
+				if (!confirm('Stop syncing on this device? Your data stays, but it will no longer sync.')) {
+					return;
+				}
+				transports['server']['logout']().then(function() {
+					return setCredential(null);
+				}).then(function() {
+					return resetState();
+				}).then(function() {
+					renderSync();
+				}).catch(function(e) {
+					prefs['lastError'] = String(e);
+					renderSync();
+				});
+			});
+			$div.append($stop);
+		}
+
+		var $status = $('<span class="bsSyncStatus">');
+		$div.append($status);
+
+		syncSection.append($div);
+
+		ui['status'] = $status;
+		ui['autosync'] = $autosyncCb;
+		ui['settings'] = $settingsCb;
+
+		$autosyncCb.on('change', function() {
+			prefs['autosync'] = $autosyncCb.prop('checked');
+			savePrefs();
+			if (prefs['autosync']) {
+				schedule('manual', 0);
+			}
+		});
+
+		$settingsCb.on('change', function() {
+			prefs['settings'] = $settingsCb.prop('checked') ? 'settings' : 'off';
+			savePrefs();
+		});
+
+		ui['status'].text(statusText());
 	}
 
 	// Sync
-	function syncNow(reason) {
+	// Wait for saved prefs and credentials before choosing a backend.
+	function syncNow(reason, strategy) {
 		if (syncing && syncPromise) {
 			return syncPromise;
+		}
+		return (ready || Promise.resolve()).then(function() {
+			return syncNowReady(reason, strategy);
+		});
+	}
+
+	function syncNowReady(reason, strategy) {
+		if (syncing && syncPromise) {
+			return syncPromise;
+		}
+		if (reason === 'manual') {
+			userPaused = false;
+		} else if (userPaused) {
+			// also catches autosyncs scheduled before the user declined
+			return Promise.resolve({ 'status': 'paused', 'reason': 'user' });
 		}
 		var transport = pickTransport();
 		if (!transport) {
@@ -277,10 +759,10 @@ var bsSync = execMain(function() {
 		}
 		syncing = true;
 		updateUI();
-		syncPromise = loadPrefs().then(function(p) {
+		syncPromise = ready.then(function() {
 			var deps = getDeps();
 			var engine = syncEngine['create'](deps);
-			return engine['syncNow']({ 'settings': p['settings'] });
+			return engine['syncNow']({ 'settings': prefs['settings'], 'strategy': strategy || 'merge' });
 		}).then(function(result) {
 			if (result['status'] === 'ok') {
 				prefs['lastSync'] = Date.now();
@@ -289,7 +771,14 @@ var bsSync = execMain(function() {
 					logohint.push('bsTimer sync: ' + result['conflicts'] + " conflicting change(s), this device's version was kept");
 				}
 			} else if (result['status'] === 'error' || result['status'] === 'paused') {
-				prefs['lastError'] = result['error'] || result['status'];
+				if (result['status'] === 'paused') {
+					userPaused = true;
+				}
+				if (result['status'] === 'paused' && result['reason'] === 'deletion') {
+					prefs['lastError'] = 'paused: deletion not confirmed';
+				} else {
+					prefs['lastError'] = result['error'] || result['status'];
+				}
 				if (result['status'] === 'error' && reason !== 'manual' && !autoErrorLogged) {
 					logohint.push('bsTimer sync failed: ' + (result['error'] || result['status']));
 					autoErrorLogged = true;
@@ -313,8 +802,12 @@ var bsSync = execMain(function() {
 	}
 
 	// Autosync
+	// Set when the user declines a sync (deletion warning or import question): autosync
+	// stays off until they press "Sync now" or reload, so they aren't asked again and again.
+	var userPaused = false;
+
 	function schedule(reason, delayMs) {
-		if (!prefs['autosync']) { return; }
+		if (!prefs['autosync'] || userPaused) { return; }
 		if (!pickTransport()) { return; }
 		if (syncTimer) {
 			clearTimeout(syncTimer);
@@ -330,75 +823,24 @@ var bsSync = execMain(function() {
 		if (siteConfig['customIdSync'] === false && typedIdRow) {
 			typedIdRow.remove();
 		}
-		var transport = pickTransport();
-		var $div = $('<div class="bsSync">');
-		var $heading = $('<div class="bsSyncHeading">');
-		$heading.text('Sync');
-		if (transport) {
-			$heading.append(' (' + transport['label'] + ')');
-		} else {
-			$heading.append(' (not available here)');
-		}
-		$div.append($heading);
-
-		if (!transport) {
-			$div.append($('<div class="bsSyncMsg">').text("Sync isn't available here yet."));
-			exportDiv.append($div);
-			return;
-		}
-
-		var $autosync = $('<label>');
-		var $autosyncCb = $('<input type="checkbox">');
-		$autosyncCb.prop('checked', prefs['autosync']);
-		$autosync.append($autosyncCb);
-		$autosync.append(document.createTextNode(' Sync automatically'));
-		$div.append($autosync);
-
-		var $settings = $('<label>');
-		var $settingsCb = $('<input type="checkbox">');
-		$settingsCb.prop('checked', prefs['settings'] === 'settings');
-		$settings.append($settingsCb);
-		$settings.append(document.createTextNode(' Also sync settings (display and input settings stay per device)'));
-		$div.append($settings);
-
-		var $btn = $('<a class="click">').text('Sync now');
-		$div.append($btn);
-
-		var $status = $('<span class="bsSyncStatus">');
-		$div.append($status);
-
-		exportDiv.append($div);
-
-		ui['status'] = $status;
-		ui['autosync'] = $autosyncCb;
-		ui['settings'] = $settingsCb;
-
-		updateUI();
-
-		$autosyncCb.on('change', function() {
-			prefs['autosync'] = $autosyncCb.prop('checked');
-			savePrefs();
-			if (prefs['autosync']) {
-				schedule('manual', 0);
-			}
-		});
-
-		$settingsCb.on('change', function() {
-			prefs['settings'] = $settingsCb.prop('checked') ? 'settings' : 'off';
-			savePrefs();
-		});
-
-		$btn.on('click', function() {
-			syncNow('manual').then(function(result) {
-				updateUI();
-			});
-		});
+		syncSection = $('<div class="bsSyncSection">');
+		exportDiv.append(syncSection);
+		renderSync();
 	}
 
 	// Init
 	function init() {
-		openKV().then(function() {
-			return loadPrefs();
+		ready = openKV().then(function() {
+			return Promise.all([
+				kvGet('prefs').then(function(p) {
+					if (p && typeof p === 'object') {
+						prefs = p;
+					}
+				}),
+				kvGet('serverCred').then(function(c) {
+					cred = (c && typeof c === 'object') ? c : null;
+				})
+			]);
 		}).then(function() {
 			$(function() {
 				schedule('load', 2000);
@@ -447,8 +889,10 @@ var bsSync = execMain(function() {
 	init();
 
 	var api = {
+		'busy': function() { return !!(syncing || syncTimer); },
 		'attach': attach,
 		'syncNow': syncNow,
+		'setCredential': setCredential,
 		'transports': transports
 	};
 	window['bsSync'] = api;

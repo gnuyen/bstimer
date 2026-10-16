@@ -20,7 +20,7 @@ var syncData = (function() {
 		'useLogo': true, 'scrType': true, 'zoom': true, 'view': true, 'uidesign': true,
 		'timerSize': true, 'font': true, 'smallADP': true, 'toolPos': true, 'NTools': true,
 		'toolsfunc': true, 'scrSize': true, 'scrASize': true, 'scrAlign': true, 'scrWrap': true,
-		'scrMono': true, 'imgSize': true, 'imgRep': true, 'giiMacMap': true, 'giiSolved': true
+		'scrMono': true, 'imgSize': true, 'imgRep': true, 'giiMacMap': true, 'giiSolved': true, 'bsSyncMark': true
 	};
 	// prefixes that mark a key as device-local
 	var PREFIXES = ['gii', 'vrc', 'wnd', 'bgImg'];
@@ -34,20 +34,37 @@ var syncData = (function() {
 		if (key.indexOf('Hide') === key.length - 4) { return true; }
 		return false;
 	}
+	// true for csTimer's untouched default sessions (never synced)
+	function isPlaceholder(meta, solves) {
+		if (!solves || solves.length !== 0) { return false; }
+		var name = meta['name'];
+		var nameIsNumeric = (typeof name === 'number') || (typeof name === 'string' && /^\d+$/.test(name));
+		if (!nameIsNumeric) { return false; }
+		var opt = meta['opt'];
+		if (opt === undefined || opt === null) { return true; }
+		if (typeof opt !== 'object') { return true; }
+		var k;
+		for (k in opt) {
+			if (Object.prototype.hasOwnProperty.call(opt, k)) { return false; }
+		}
+		return true;
+	}
 	// toSnapshot(exportObj, properties, mode) -> { sessions, properties }
 	function toSnapshot(exportObj, properties, mode) {
 		var sd = parseSessionData(properties['sessionData']);
 		var n = properties['sessionN'];
-		var sessions = {}, i, meta, uid, entry;
+		var sessions = {}, i, meta, uid, entry, solves;
 		for (i = 1; i <= n; i++) {
 			entry = sd[i];
 			meta = (entry && typeof entry === 'object') ? clone(entry) : {};
+			solves = exportObj['session' + i] || [];
+			if (isPlaceholder(meta, solves)) { continue; }
 			uid = meta['uid'];
 			if (!uid) { throw new Error('session ' + i + ' has no uid'); }
 			delete meta['uid'];
 			delete meta['stat'];
 			delete meta['date'];
-			sessions[uid] = { 'meta': meta, 'solves': clone(exportObj['session' + i] || []) };
+			sessions[uid] = { 'meta': meta, 'solves': clone(solves) };
 		}
 		var props = {};
 		if (mode === 'settings') {
@@ -79,12 +96,18 @@ var syncData = (function() {
 		});
 		var n = uids.length;
 		var exportObj = {}, sessionData = {}, i, uid, meta;
-		for (i = 0; i < n; i++) {
-			uid = uids[i];
-			exportObj['session' + (i + 1)] = clone(snapSessions[uid]['solves']);
-			meta = clone(snapSessions[uid]['meta']);
-			meta['uid'] = uid;
-			sessionData[i + 1] = meta;
+		if (n === 0) {
+			exportObj['session1'] = [];
+			sessionData['1'] = { 'name': 1, 'opt': {}, 'rank': 1 };
+			n = 1;
+		} else {
+			for (i = 0; i < n; i++) {
+				uid = uids[i];
+				exportObj['session' + (i + 1)] = clone(snapSessions[uid]['solves']);
+				meta = clone(snapSessions[uid]['meta']);
+				meta['uid'] = uid;
+				sessionData[i + 1] = meta;
+			}
 		}
 		var props = clone(localProperties);
 		if (mode === 'settings') {

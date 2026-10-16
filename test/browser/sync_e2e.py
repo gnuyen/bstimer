@@ -89,7 +89,7 @@ try:
     # Fresh start: no sync state, no marker.
     wd('POST', S + '/url', {'url': BASE})
     check('page loads with bsSync', wait_ready())
-    js_async('localStorage.removeItem("bsSyncMarker"); var d = indexedDB.deleteDatabase("bstimer-sync"); d.onsuccess = d.onerror = d.onblocked = function(){ done(1); };')
+    js_async('var d = indexedDB.deleteDatabase("bstimer-sync"); d.onsuccess = d.onerror = d.onblocked = function(){ done(1); };')
     wd('POST', S + '/refresh', {})
     check('reloads after reset', wait_ready())
 
@@ -108,7 +108,7 @@ return {sync: $('.bsSync').length, rows: fileLink.closest('table').find('tr').le
     check('first sync ok (autosync on load may already have uploaded)', r.get('status') == 'ok', r)
     c = json.loads(cloud())
     n_local = int(js('return ~~kernel.getProp("sessionN")'))
-    check('cloud has every local session', c and len(c['data']['sessions']) == n_local, (n_local, c and list(c['data']['sessions'])))
+    check("untouched default sessions aren't uploaded", c and len(c['data']['sessions']) == 0, (n_local, c and list(c['data']['sessions'])))
     uids = js('var d = JSON.parse(kernel.getProp("sessionData")); return Object.keys(d).map(function(k){ return d[k].uid; });')
     check('local sessions got uids', uids and all(uids), uids)
 
@@ -122,15 +122,16 @@ return {sync: $('.bsSync').length, rows: fileLink.closest('table').find('tr').le
     check('reloads after applying', wait_ready())
     names = session_names()
     check('session from the cloud arrived', names and 'From cloud' in names, names)
-    check('every local session is still there', names and len(names) == n_local + 1, (n_local, names))
+    check('untouched default sessions give way to the synced ones', names == ['From cloud'], names)
     got = js_async('''
 var d = JSON.parse(kernel.getProp("sessionData")); var idx = 0;
 for (var k in d) if (d[k].name == "From cloud") idx = k;
 storage.exportAll().then(function(o){ done(JSON.stringify(o["session" + idx] || [])); });''')
     check('its solve arrived', json.loads(got) and json.loads(got)[0][0][1] == 12345, got)
 
-    # A csTimer import clears localStorage (and with it our marker): sync must ask.
-    js('localStorage.removeItem("bsSyncMarker")')
+    # A csTimer import replaces the settings (and with them our mark): sync must ask.
+    mark_before = js('return kernel.getProp("bsSyncMark")')
+    js('kernel.setProp("bsSyncMark", "imported-file")')
     wd('POST', S + '/execute/async', {'script': 'var done = arguments[0]; bsSync.syncNow("manual"); setTimeout(function(){ done(1); }, 100);', 'args': []})
     time.sleep(1)
     alert = wd('GET', S + '/alert/text')
@@ -138,7 +139,9 @@ storage.exportAll().then(function(o){ done(JSON.stringify(o["session" + idx] || 
     wd('POST', S + '/alert/accept', {})  # combine
     time.sleep(3)
     wait_ready()
-    check('marker restored after combining', js('return localStorage["bsSyncMarker"]') == '1')
+    mark_after = js('return kernel.getProp("bsSyncMark")')
+    check('a new mark is set after combining', mark_after not in (None, '', 'imported-file', mark_before), (mark_before, mark_after))
+    check('the mark survives a reload (csTimer keeps its settings)', (wd('POST', S + '/refresh', {}), wait_ready(), js('return kernel.getProp("bsSyncMark")'))[2] == mark_after)
     names = session_names()
     check('combine kept the cloud session', names and 'From cloud' in names, names)
 
