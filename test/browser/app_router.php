@@ -24,6 +24,7 @@ if ($path === '/fakecloud') {
 			$out = ['ok' => true, 'tag' => $st['tag']];
 			break;
 		case 'setCode': $st['code'] = $msg['code']; $out = true; break;
+		case 'deleteAll': $st['data'] = null; $st['tag'] = null; $st['code'] = null; $out = true; break;
 		case 'reset': $st = ['data' => null, 'tag' => null, 'code' => null, 'n' => 0]; $out = true; break;
 		case 'peek': $out = $st; break;
 	}
@@ -32,6 +33,23 @@ if ($path === '/fakecloud') {
 	fwrite($fp, json_encode($st));
 	fclose($fp);
 	echo json_encode($out);
+	return true;
+}
+
+// Stand-in for oauthwca.php: counts sign-in code exchanges (GET /oauthhits reads the count).
+$hits = sys_get_temp_dir() . '/bstimer-oauthhits';
+if ($path === '/oauthwca.php') {
+	file_put_contents($hits, (string)((int)@file_get_contents($hits) + 1));
+	header('Content-Type: application/json');
+	echo '{"error":"test stand-in"}';
+	return true;
+}
+if ($path === '/oauthhits') {
+	header('Content-Type: application/json');
+	if (($_GET['reset'] ?? '') === '1') {
+		@unlink($hits);
+	}
+	echo (int)@file_get_contents($hits);
 	return true;
 }
 

@@ -10,7 +10,10 @@ bsTimer is csTimer with a few changes that are useful when you host it yourself 
 - Unconfigured online tools are hidden: an empty `compServer` hides Online Competition, an empty `battleSocket` hides Online battle.
 - App update notice: when the bsTimer iOS app's user agent (`bsTimer/<revision>`) is older than `latestAppRevision`, the page shows a logo hint at most once a day (`src/js/bstimer/appupdate.js`).
 - Offline support: `src/sw.js` is a working service worker. The page loads from the network when it can and from a cached copy when offline or slow (4 s). Scripts and styles follow the page: when it came from the network they are revalidated as well, so a deploy shows up on the next load with no mix of old and new files.
-- `src/js/bstimer/app-auth.js`: hands Google sign-in back to the bsTimer iOS app. It only acts on URLs carrying `state=cstimer-ios`, which only the app adds.
+- `src/js/bstimer/app-auth.js`: hands Google sign-in back to the bsTimer iOS app. It only acts when the sign-in's `state` ends in `.cstimer-ios`, a marker only the app adds.
+- Sign-in state check (`export.js`): the WCA and Google sign-in links carry a random `state`, kept per tab in sessionStorage, and a sign-in result that comes back without it is ignored. This stops another site from signing you in to its own account (login CSRF).
+- Privacy page: `src/privacy.html` describes what the site stores. It names the operator and contact from `siteOperator` and `privacyContact`, and the Sync section links to it.
+- Rate limits: `src/ratelimit.php` limits requests per client for sync and `userdata2.php`, keyed by a salted hash of the IP address.
 - `src/userdata2.php`: the export/import-to-server backend, with prepared statements, validated ids, content-checked write-once slices, size limits and no cross-origin access. Settings come from the server settings file.
 - Sync between devices: the Export dialog has a "Sync" section (`src/js/bstimer/sync*.js`, `src/sync.php`). It keeps sessions and solves in step across the devices that share a sync code.
 - `src/js/bstimer/keepawake.js`: re-requests the screen wake lock when a timer starts. It works in an installed web app, where the page's own wake lock is not enough.
@@ -39,13 +42,18 @@ In bsTimer mode the app syncs to the user's iCloud automatically, with no sign-i
 
 ### Server history
 
-The server keeps the newest 20 synced versions plus one per day for 120 days (`sync_keep_recent` and `sync_keep_days`); "Earlier versions…" restores one.
+The server keeps the newest 20 synced versions plus one per day for 120 days (`sync_keep_recent` and `sync_keep_days`); "Earlier versions…" restores one. Sign-in sessions end after 180 days without use (`sync_session_days`).
+
+### Deleting synced data
+
+"Delete synced data…" in the Sync section deletes the server copy with all its versions, codes, sessions and linked sign-ins; in the iOS app it also deletes the iCloud copy and code. With the Sign in with Apple key configured, the server first revokes each linked Apple sign-in (Apple requires this when an app lets users delete their account). Sync is then turned off on that device; its local data stays.
 
 ### Setting up Sign in with Apple
 
 1. On developer.apple.com, the app's App ID needs Sign in with Apple.
 2. Create a Services ID for the website, enable Sign in with Apple, and configure it with the app's App ID as primary, your domain, and the return URL `https://<your domain>/applelogin.php`.
 3. Set `appleServicesId` in `config.local.js` and `apple_services_id` / `apple_bundle_id` in the server settings.
+4. For revoking sign-ins on deletion: create a Sign in with Apple key, put the .p8 outside the web root (mode 600), and set `apple_team_id`, `apple_key_id` and `apple_key_file`. On sign-in the server then exchanges Apple's authorization code for a refresh token, which it keeps only to revoke.
 
 ## Hosting your own copy
 
@@ -77,6 +85,7 @@ var SITE_CONFIG = {
 | latestAppRevision | Newest bsTimer iOS app revision; older apps get an update hint. 0 turns the check off. | `0` |
 | appleServicesId | your Sign in with Apple Services ID; empty (default) hides Sign in with Apple. | empty |
 | appleRedirectUri | the return URL registered for the Services ID; empty means `applelogin.php` next to the page. | empty |
+| siteOperator, privacyContact | Shown on `privacy.html`: who runs the site, and an email address or URL for privacy requests. | empty |
 
 ### Server settings
 
@@ -118,11 +127,15 @@ return [
 | sync_keep_recent | Newest synced versions always kept; default 20. |
 | sync_keep_days | Additionally keep the newest version of each UTC day within this many days; default 120. |
 | sync_max_space_bytes | Most bytes of solve data one sync space may hold; default 64 MiB. When full, old versions and abandoned uploads are cleared first. |
+| sync_session_days | Sign-in sessions end after this many days without use; default 180, 0 never. |
+| sync_rate_limits | Requests per client as `bucket => [count, seconds]`: `create` (new codes and deletion), `login`, `write` (uploads). Default 20, 60 and 1200 an hour. A count of 0 turns a limit off. |
+| userdata_rate_limits | The same for `userdata2.php`: `write` (uploads) and `read`. Default 120 and 600 an hour. |
 | google_client_id | Your Google OAuth client id (the same as googleClientId); turns on "Sign in with Google" for sync. sync.php asks Google to confirm that each token was issued to this client. Empty (the default) turns it off. |
 | apple_services_id, apple_bundle_id | identity tokens issued to the website (Services ID) or the iOS app (bundle id) are accepted; both empty turns Sign in with Apple off. sync.php checks the token's signature against Apple's published keys; no Apple key file is needed for signing in. |
-| apple_team_id, apple_key_id, apple_key_file | only for revoking sign-ins (not used yet); keep the .p8 outside the web root with mode 600. |
+| apple_team_id, apple_key_id, apple_key_file | Your Sign in with Apple key, used only to revoke sign-ins when data is deleted; keep the .p8 outside the web root with mode 600. |
+| apple_redirect_uri | The website's Sign in with Apple return URL, if it isn't `applelogin.php` next to `sync.php`. |
 
-Only hashes of codes and session tokens are stored.
+Only hashes of codes, session tokens and account ids are stored. Rate limits count clients by a hash of the IP address salted with `wca_token_salt`, kept for at most a day.
 
 ### Deploying
 
@@ -161,5 +174,6 @@ Browser tests live in `test/browser/` and run with safaridriver:
 - `sync_e2e.py` — the debug transport.
 - `sync_server_e2e.py` — two web devices against the real `sync.php`.
 - `app_sync_e2e.py` — two app devices with a fake iCloud bridge from `test/browser/app_router.php`, plus a web device.
+- `account_e2e.py` — the sign-in state check, and deleting synced data on the web and in the app (same router).
 
 Warn: the browser tests erase the site data of the origin they run on, so only point them at a local test server.
