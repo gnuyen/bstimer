@@ -244,6 +244,25 @@ function bstimer_sync_stored_hashes(PDO $db, array $t, string $space, array $has
 	return $stmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
+// Bytes of slice data a space holds.
+function bstimer_sync_space_bytes(PDO $db, array $t, string $space): int
+{
+	$stmt = $db->prepare("SELECT COALESCE(SUM(LENGTH(data)), 0) FROM " . $t['slices'] . " WHERE space_id = ?");
+	$stmt->execute([$space]);
+	return (int)$stmt->fetchColumn();
+}
+
+// Whether $adding more bytes fit in the space. When they don't, old versions and
+// abandoned uploads are pruned first, then checked again.
+function bstimer_sync_fits(PDO $db, array $t, string $space, int $adding, int $max, int $now, int $keepRecent, int $keepDays): bool
+{
+	if ($adding === 0 || bstimer_sync_space_bytes($db, $t, $space) + $adding <= $max) {
+		return true;
+	}
+	bstimer_sync_prune($db, $t, $space, $now, $keepRecent, $keepDays);
+	return bstimer_sync_space_bytes($db, $t, $space) + $adding <= $max;
+}
+
 function bstimer_sync_prune(PDO $db, array $t, string $space, int $now, int $keepRecent, int $keepDays): void
 {
 	$stmt = $db->prepare("SELECT version, created FROM " . $t['versions'] . " WHERE space_id = ? ORDER BY version DESC");
@@ -483,6 +502,8 @@ function bstimer_sync_apple_verify(string $idToken, array $audiences, int $now, 
 function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null): string
 {
 	$now = ($now === null) ? time() : (int)$now;
+	// Only plain string fields count: a field sent as an array (code[]=...) is dropped.
+	$post = array_filter($post, 'is_string');
 	$prefix = (string)($opts['prefix'] ?? 'bstimer_sync_');
 	if (!preg_match('/^[A-Za-z0-9_]+$/', $prefix)) {
 		throw new InvalidArgumentException('invalid table prefix');
@@ -492,6 +513,8 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 	$maxManifestBytes = (int)($opts['max_manifest_bytes'] ?? 1048576);
 	$keepRecent = (int)($opts['keep_recent'] ?? 20);
 	$keepDays = (int)($opts['keep_days'] ?? 120);
+	$maxSpaceBytes = (int)($opts['max_space_bytes'] ?? 67108864);
+	$spaceFull = '{"retcode":413,"reason":"space full"}';
 
 	try {
 		bstimer_sync_ensure_schema($db, $prefix);
@@ -659,6 +682,15 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 			// all checks done; insert the slices this space doesn't have yet
 			$existing = bstimer_sync_stored_hashes($db, $t, $space, array_keys($provided));
 			$existingSet = array_flip($existing);
+			$adding = 0;
+			foreach ($provided as $h => $data) {
+				if (!isset($existingSet[$h])) {
+					$adding += strlen($data);
+				}
+			}
+			if (!bstimer_sync_fits($db, $t, $space, $adding, $maxSpaceBytes, $now, $keepRecent, $keepDays)) {
+				return $spaceFull;
+			}
 			$stored = 0;
 			$stmtIns = $db->prepare("INSERT INTO " . $t['slices'] . " (space_id, hash, data, created) VALUES (?, ?, ?, ?)");
 			foreach ($provided as $h => $data) {
@@ -729,6 +761,16 @@ function bstimer_sync(array $post, PDO $db, array $opts = [], ?int $now = null):
 				if (!isset($provided[$h]) && !isset($storedSet[$h])) {
 					return json_encode(['retcode' => 400, 'reason' => 'missing slices']);
 				}
+			}
+			$adding = 0;
+			$newSet = array_flip(bstimer_sync_stored_hashes($db, $t, $space, array_keys($provided)));
+			foreach ($provided as $h => $data) {
+				if (!isset($newSet[$h])) {
+					$adding += strlen($data);
+				}
+			}
+			if (!bstimer_sync_fits($db, $t, $space, $adding, $maxSpaceBytes, $now, $keepRecent, $keepDays)) {
+				return $spaceFull;
 			}
 			// all checks done; now write
 			$db->beginTransaction();
@@ -837,6 +879,7 @@ if (!defined('BSTIMER_TEST')) {
 		'prefix' => $c['sync_table_prefix'],
 		'keep_recent' => $c['sync_keep_recent'],
 		'keep_days' => $c['sync_keep_days'],
+		'max_space_bytes' => $c['sync_max_space_bytes'],
 		'google_client_id' => $c['google_client_id'] ?? '',
 		'apple_audiences' => array_values(array_filter([$c['apple_services_id'] ?? '', $c['apple_bundle_id'] ?? ''], 'strlen')),
 	]);

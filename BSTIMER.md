@@ -10,13 +10,12 @@ bsTimer is csTimer with a few changes that are useful when you host it yourself 
 - Unconfigured online tools are hidden: an empty `compServer` hides Online Competition, an empty `battleSocket` hides Online battle.
 - App update notice: when the bsTimer iOS app's user agent (`bsTimer/<revision>`) is older than `latestAppRevision`, the page shows a logo hint at most once a day (`src/js/bstimer/appupdate.js`).
 - Offline support: `src/sw.js` is a working service worker. The page loads from the network when it can and from a cached copy when offline or slow (4 s). Scripts and styles follow the page: when it came from the network they are revalidated as well, so a deploy shows up on the next load with no mix of old and new files.
-- Screen Wake Lock: the screen stays awake while a timer is running (`src/js/kernel.js`).
 - `src/js/bstimer/app-auth.js`: hands Google sign-in back to the bsTimer iOS app. It only acts on URLs carrying `state=cstimer-ios`, which only the app adds.
 - `src/userdata2.php`: the export/import-to-server backend, with prepared statements, validated ids, content-checked write-once slices, size limits and no cross-origin access. Settings come from the server settings file.
 - Sync between devices: the Export dialog has a "Sync" section (`src/js/bstimer/sync*.js`, `src/sync.php`). It keeps sessions and solves in step across the devices that share a sync code.
 - `src/js/bstimer/keepawake.js`: re-requests the screen wake lock when a timer starts. It works in an installed web app, where the page's own wake lock is not enough.
 - `src/js/bstimer/syncicloud.js`: syncs to the user's iCloud when the page runs inside the bsTimer iOS app.
-- `src/applelogin.php` — receives Sign in with Apple's reply and passes it to the page in the URL fragment.
+- `src/applelogin.php`: receives Sign in with Apple's reply and passes it to the page in the URL fragment.
 
 ## Sync
 
@@ -118,6 +117,7 @@ return [
 | sync_table_prefix | Prefix for the sync tables; default `bstimer_sync_`. Tables are created on first use. |
 | sync_keep_recent | Newest synced versions always kept; default 20. |
 | sync_keep_days | Additionally keep the newest version of each UTC day within this many days; default 120. |
+| sync_max_space_bytes | Most bytes of solve data one sync space may hold; default 64 MiB. When full, old versions and abandoned uploads are cleared first. |
 | google_client_id | Your Google OAuth client id (the same as googleClientId); turns on "Sign in with Google" for sync. sync.php asks Google to confirm that each token was issued to this client. Empty (the default) turns it off. |
 | apple_services_id, apple_bundle_id | identity tokens issued to the website (Services ID) or the iOS app (bundle id) are accepted; both empty turns Sign in with Apple off. sync.php checks the token's signature against Apple's published keys; no Apple key file is needed for signing in. |
 | apple_team_id, apple_key_id, apple_key_file | only for revoking sign-ins (not used yet); keep the .p8 outside the web root with mode 600. |
@@ -131,7 +131,7 @@ Upload `src/` to your web server, including your `src/js/bstimer/config.local.js
 ### Security notes
 
 - Use WCA sign-in for server backups and set `customIdSync: false` with `userdata_allow_custom_ids => false`: typed ids work like passwords anyone can guess.
-- `wca_token_salt` must be a long random secret. Changing it changes every WCA user's storage id.
+- `wca_token_salt` must be a long random secret: `oauthwca.php` refuses to sign anyone in while it is the all-zero placeholder. Changing it changes every WCA user's storage id.
 - Keep the server settings file outside the web root, and don't leave logs or old copies of PHP scripts in it: anything PHP-executable or readable there is public.
 
 ## Keeping up with csTimer

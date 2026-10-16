@@ -2,7 +2,7 @@
 
 // Site settings: the servers and sign-in apps this copy of the timer talks to.
 // The defaults are csTimer's own (cstimer.net). To run your own site, don't edit this
-// file: create js/config.local.js (ignored by git) and set only what differs, e.g.
+// file: create js/bstimer/config.local.js (ignored by git) and set only what differs, e.g.
 //
 //   var SITE_CONFIG = {
 //   	'dataServer': 'https://timer.example.org/',
@@ -10,7 +10,7 @@
 //   	'googleClientId': '<your id>.apps.googleusercontent.com'
 //   };
 //
-// index.php loads js/config.local.js, when it exists, just before this file.
+// index.php loads js/bstimer/config.local.js, when it exists, just before this file.
 var siteConfig = (function() {
 	var defaults = {
 		// Base URL (with trailing slash) of userdata2.php, used by export/import to server.

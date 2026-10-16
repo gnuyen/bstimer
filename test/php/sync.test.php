@@ -257,6 +257,30 @@ ok(call($db, ['action' => 'missing', 'code' => $code, 'hashes' => $fresh[0]])['m
 
 // ---------- misc ----------
 ok(call(db(), ['action' => 'bogus'])['retcode'] === 400, 'unknown action is 400');
+
+// ---------- hostile input ----------
+$db = db();
+$code = call($db, ['action' => 'create'])['code'];
+ok(call($db, ['action' => ['head'], 'code' => $code])['retcode'] === 400, 'an array action is refused');
+ok(call($db, ['action' => 'head', 'code' => [$code]])['retcode'] === 401, 'an array code is ignored');
+
+// ---------- storage quota per space ----------
+$db = db();
+$code = call($db, ['action' => 'create'])['code'];
+$q = ['max_space_bytes' => 10];
+$a = slice('123456'); $b = slice('abcdef');
+ok(call($db, ['action' => 'upload_slices', 'code' => $code, 'slices' => json_encode([$a[0] => $a[1]])], null, $q)['retcode'] === 0, 'uploads within the quota are stored');
+$r = call($db, ['action' => 'upload_slices', 'code' => $code, 'slices' => json_encode([$b[0] => $b[1]])], null, $q);
+ok($r['retcode'] === 413 && $r['reason'] === 'space full', 'uploads past the quota are refused');
+ok(put($db, $code, 0, [$a, $b], null, null, $q)['retcode'] === 413, 'a put past the quota is refused');
+ok(put($db, $code, 0, [$a], null, null, $q)['retcode'] === 0, 'a put within the quota works');
+// an abandoned upload stops counting once it is a day old and unreferenced
+$code2 = call($db, ['action' => 'create'])['code'];
+call($db, ['action' => 'upload_slices', 'code' => $code2, 'slices' => json_encode([$b[0] => $b[1]])], null, $q);
+$c = slice('vwxyz');
+ok(call($db, ['action' => 'upload_slices', 'code' => $code2, 'slices' => json_encode([$c[0] => $c[1]])], null, $q)['retcode'] === 413, 'abandoned uploads count for a day');
+ok(call($db, ['action' => 'upload_slices', 'code' => $code2, 'slices' => json_encode([$c[0] => $c[1]])], $NOW + 2 * 86400, $q)['retcode'] === 0, 'then they are cleared to make room');
+
 $src = file_get_contents(__DIR__ . '/../../src/sync.php');
 ok(strpos($src, 'Access-Control-Allow-Origin') === false, 'no cross-origin access');
 

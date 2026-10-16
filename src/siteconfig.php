@@ -79,6 +79,8 @@ function bstimer_config(): array
 		'sync_keep_recent' => 20,
 		// additionally keep the newest version of each UTC day within this many days
 		'sync_keep_days' => 120,
+		// most bytes of solve data one sync space may hold (64 MiB)
+		'sync_max_space_bytes' => 67108864,
 		// Google OAuth client id (the site's googleClientId) for "Sign in with Google" in
 		// sync; empty turns it off. sync.php asks Google to confirm each token was issued to it.
 		'google_client_id' => '',

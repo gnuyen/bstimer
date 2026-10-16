@@ -8,6 +8,9 @@ $config = bstimer_config();
 $applicationId = $config['wca_application_id'];
 $applicationSecret = $config['wca_application_secret'];
 $csTimerTokenSalt = $config['wca_token_salt'];
+if (!preg_match('/[^0]/', $csTimerTokenSalt)) {
+	exit; // with the placeholder salt, anyone could work out a user's token from their WCA id
+}
 
 $validUrlRe = $config['wca_referrer_pattern'];
 $matches = array();

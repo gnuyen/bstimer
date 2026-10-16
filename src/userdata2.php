@@ -33,6 +33,8 @@ function bstimer_userdata(array $post, PDO $db, string $table, array $limits = [
 	if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) {
 		throw new InvalidArgumentException('invalid table name');
 	}
+	// Only plain string fields count: a field sent as an array (id[]=...) is dropped.
+	$post = array_filter($post, 'is_string');
 	if ($historyTable === '') {
 		$historyTable = $table . '_history';
 	}

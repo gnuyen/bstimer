@@ -311,6 +311,15 @@ $stmt = $db->prepare('SELECT save_data FROM my_cstimer_saves WHERE username = ?'
 $stmt->execute(['eve']);
 ok($stmt->fetchColumn() === 'v2', 'main row has new data despite history failure');
 
+
+// hostile input: array fields are ignored instead of crashing or storing "Array"
+$db = freshDb();
+$r = json_decode(bstimer_userdata(['id' => ['user1']], $db, 'my_cstimer_saves'), true);
+ok($r['retcode'] === 400, 'an array id is refused');
+$r = json_decode(bstimer_userdata(['id' => 'user2', 'data' => ['x']], $db, 'my_cstimer_saves'), true);
+$g = json_decode(bstimer_userdata(['id' => 'user2'], $db, 'my_cstimer_saves'), true);
+ok($g['retcode'] === 404, 'array data is not stored');
+
 if ($failures > 0) {
 	echo "# FAILURES\n";
 	exit(1);
