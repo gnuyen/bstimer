@@ -1,10 +1,13 @@
 // bsTimer offline support: replaces csTimer's placeholder sw.js on the server.
 // The page is network-first (falls back to the cached copy offline or after a few
-// seconds); scripts, styles and images are served from cache and refreshed in the
-// background, so a deploy shows up on the second launch.
+// seconds). Scripts, styles and images follow the page: when the page came from the
+// network they are revalidated too (so a deploy shows up on the next launch, with no
+// mix of old and new files), and when it came from the cache they do as well.
 'use strict';
 
 const CACHE = 'bstimer-offline-v1';
+// Pages (by client id) that were served from the cache: their assets come from the cache too.
+const fromCache = new Set();
 const SCOPE = self.registration.scope;
 const ORIGIN = new URL(SCOPE).origin;
 const PAGE = SCOPE;
@@ -101,6 +104,11 @@ self.addEventListener('activate', event => {
 });
 
 function navigate(event) {
+	const id = event.resultingClientId;
+	const served = res => {
+		if (id) fromCache.add(id);
+		return res;
+	};
 	const network = fetch(event.request).then(res => {
 		if (cacheable(res)) {
 			return put(PAGE, res.clone()).then(() => res);
@@ -117,7 +125,7 @@ function navigate(event) {
 			clearTimeout(timer);
 			caches.open(CACHE).then(c => c.match(PAGE)).then(cached => {
 				if (cached) {
-					resolve(cached);
+					resolve(served(cached));
 				} else {
 					// If nothing cached and timer fired, keep waiting for network
 					network.then(res => resolve(res)).catch(() => {
@@ -135,7 +143,7 @@ function navigate(event) {
 				resolve(res);
 			} else {
 				caches.open(CACHE).then(c => c.match(PAGE)).then(cached => {
-					resolve(cached || res);
+					resolve(cached ? served(cached) : res);
 				});
 			}
 		}).catch(() => {
@@ -144,7 +152,7 @@ function navigate(event) {
 			clearTimeout(timer);
 			caches.open(CACHE).then(c => c.match(PAGE)).then(cached => {
 				if (cached) {
-					resolve(cached);
+					resolve(served(cached));
 				} else {
 					resolve(offline());
 				}
@@ -155,17 +163,16 @@ function navigate(event) {
 
 function asset(event) {
 	return caches.open(CACHE).then(c => c.match(event.request).then(hit => {
-		const network = fetch(event.request, { cache: 'no-cache' }).then(res => {
+		if (hit && fromCache.has(event.clientId)) return hit;
+		return fetch(event.request, { cache: 'no-cache' }).then(res => {
 			if (cacheable(res)) {
 				return c.put(event.request, res.clone()).then(() => res);
 			}
-			return res;
+			return hit && !res.ok ? hit : res;
+		}, err => {
+			if (hit) return hit;
+			throw err;
 		});
-		if (hit) {
-			event.waitUntil(network.catch(() => {}));
-			return hit;
-		}
-		return network;
 	}));
 }
 

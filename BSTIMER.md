@@ -9,7 +9,7 @@ bsTimer is csTimer with a few changes that are useful when you host it yourself 
 - Error reports: `src/bug.php` stores the JavaScript error reports csTimer sends, without the browser fingerprint or IP address, in a size-capped log outside the web root.
 - Unconfigured online tools are hidden: an empty `compServer` hides Online Competition, an empty `battleSocket` hides Online battle.
 - App update notice: when the bsTimer iOS app's user agent (`bsTimer/<revision>`) is older than `latestAppRevision`, the page shows a logo hint at most once a day (`src/js/bstimer/appupdate.js`).
-- Offline support: `src/sw.js` is a working service worker. The page loads from the network when it can and from a cached copy when offline; scripts and styles are served from cache and refreshed in the background, so a deploy shows up on the second load.
+- Offline support: `src/sw.js` is a working service worker. The page loads from the network when it can and from a cached copy when offline or slow (4 s). Scripts and styles follow the page: when it came from the network they are revalidated as well, so a deploy shows up on the next load with no mix of old and new files.
 - Screen Wake Lock: the screen stays awake while a timer is running (`src/js/kernel.js`).
 - `src/js/bstimer/app-auth.js`: hands Google sign-in back to the bsTimer iOS app. It only acts on URLs carrying `state=cstimer-ios`, which only the app adds.
 - `src/userdata2.php`: the export/import-to-server backend, with prepared statements, validated ids, content-checked write-once slices, size limits and no cross-origin access. Settings come from the server settings file.
