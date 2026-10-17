@@ -900,7 +900,10 @@ execMain(function() {
 			prevMoveLocTime = locTime;
 			moveCnt = parseInt(value.slice(56, 64) + value.slice(48, 56), 2);
 			giikerutil.log('[gancube]', 'v4 received move event', prevMoveCnt, moveCnt, value);
-			if (moveCnt == prevMoveCnt || prevMoveCnt == -1) {
+			// When its move counter has just restarted, the cube reports 0 before any turn and numbers
+			// its first turn 0 as well, so turn 0 after a state report of 0 is new until a turn is applied.
+			var firstTurnOfFreshCounter = moveCnt == 0 && prevMoves.length == 0;
+			if ((moveCnt == prevMoveCnt && !firstTurnOfFreshCounter) || prevMoveCnt == -1) {
 				return;
 			}
 			var ts = parseInt(value.slice(40, 48) + value.slice(32, 40) + value.slice(24, 32) + value.slice(16, 24), 2);
