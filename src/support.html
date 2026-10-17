@@ -62,8 +62,13 @@ copy), with its earlier versions and linked sign-ins. This device keeps its own 
 clear the website's data in the browser or delete the app. See the <a href="privacy.html">privacy
 policy</a>.</p>
 
+<h2 id="source">Source code and licence</h2>
+<p>This site runs a modified copy of <a href="https://github.com/cs0x7f/cstimer">csTimer</a> by cs0x7f,
+licensed under the GNU General Public License, version 3 (GPL-3.0).</p>
+<p id="source-text"></p>
+
 <h2 id="contact">Contact</h2>
-<p id="contact"></p>
+<p id="contact-text"></p>
 <p>bsTimer is unofficial. For csTimer itself see <a href="https://cstimer.net">cstimer.net</a>.</p>
 
 <p><a href="privacy.html">Privacy policy</a></p>
@@ -78,8 +83,13 @@ policy</a>.</p>
 	var c = cfg['privacyContact'];
 	if (c) {
 		var href = /^https?:\/\//.test(c) ? c : 'mailto:' + c;
-		document.getElementById('contact').innerHTML = 'Questions, problems or requests: <a href="' + esc(href) + '">' + esc(c) + '</a>.';
+		document.getElementById('contact-text').innerHTML = 'Questions, problems or requests: <a href="' + esc(href) + '">' + esc(c) + '</a>.';
 	}
+	var src = cfg['sourceUrl'];
+	if (!src || !/^https?:\/\//.test(src)) {
+		src = 'https://github.com/gnuyen/bstimer';
+	}
+	document.getElementById('source-text').innerHTML = 'Its source code, with every change, is at <a href="' + esc(src) + '">' + esc(src) + '</a>.';
 })();
 </script>
 </body>

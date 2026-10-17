@@ -32,7 +32,7 @@ function inlineScript() {
 	return scripts[0];
 }
 function run(siteConfig) {
-	const ids = ['contact', 'operator'];
+	const ids = ['contact-text', 'operator', 'source-text'];
 	const doc = fakeDocument(ids);
 	vm.runInNewContext(inlineScript(), { window: { siteConfig }, document: doc });
 	return doc;
@@ -57,8 +57,16 @@ test('is a complete, mobile-friendly page with a title', () => {
 });
 
 test('has the expected sections, by id', () => {
-	for (const id of ['start', 'cube', 'sync', 'icloud', 'move', 'delete', 'contact']) {
+	for (const id of ['start', 'cube', 'sync', 'icloud', 'move', 'delete', 'source', 'contact']) {
 		assert.match(HTML, new RegExp(`<h2 id="${id}">`), `section #${id}`);
+	}
+});
+
+test('no id is used twice (getElementById would return the heading)', () => {
+	const ids = [...HTML.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+	assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), []);
+	for (const id of ['operator', 'contact-text', 'source-text']) {
+		assert.match(HTML, new RegExp(`<p id="${id}"></p>`), `empty <p id="${id}"> for the script to fill`);
 	}
 });
 
@@ -78,25 +86,60 @@ test('covers the things people ask about', () => {
 test('fills in the operator and a mailto contact from the settings', () => {
 	const d = run({ siteOperator: 'Pat Example', privacyContact: 'pat@example.org' });
 	assert.match(d.els.operator.innerHTML, /Pat Example/);
-	assert.match(d.els.contact.innerHTML, /<a href="mailto:pat@example\.org">pat@example\.org<\/a>/);
+	assert.match(d.els['contact-text'].innerHTML, /<a href="mailto:pat@example\.org">pat@example\.org<\/a>/);
 });
 
 test('a URL contact is linked as is', () => {
 	const d = run({ privacyContact: 'https://example.org/help' });
-	assert.match(d.els.contact.innerHTML, /<a href="https:\/\/example\.org\/help">/);
+	assert.match(d.els['contact-text'].innerHTML, /<a href="https:\/\/example\.org\/help">/);
 });
 
 test('without settings the operator and contact stay empty', () => {
 	const d = run({});
 	assert.equal(d.els.operator.innerHTML, '');
-	assert.equal(d.els.contact.innerHTML, '');
+	assert.equal(d.els['contact-text'].innerHTML, '');
 	const d2 = run(undefined);
-	assert.equal(d2.els.contact.innerHTML, '');
+	assert.equal(d2.els['contact-text'].innerHTML, '');
 });
 
 test('settings are escaped, never inserted as HTML', () => {
 	const d = run({ siteOperator: '<img src=x onerror=alert(1)>', privacyContact: '"><script>x</script>@e.org' });
 	assert.doesNotMatch(d.els.operator.innerHTML, /<img/);
-	assert.doesNotMatch(d.els.contact.innerHTML, /<script/);
-	assert.match(d.els.contact.innerHTML, /&lt;script&gt;/);
+	assert.doesNotMatch(d.els['contact-text'].innerHTML, /<script/);
+	assert.match(d.els['contact-text'].innerHTML, /&lt;script&gt;/);
+});
+
+// GPL-3.0: the site runs a modified csTimer, so the page says so and links its source.
+const FORK = 'https://github.com/gnuyen/bstimer';
+
+test('credits csTimer and its licence, with a link to upstream', () => {
+	const text = HTML.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+	assert.ok(text.includes('cs0x7f'), 'credits cs0x7f');
+	assert.match(text, /GPL-3\.0|GNU General Public License/);
+	assert.match(HTML, /href="https:\/\/github\.com\/cs0x7f\/cstimer"/);
+});
+
+test("links this site's source code from the settings", () => {
+	const d = run({ sourceUrl: 'https://git.example.org/me/timer' });
+	assert.match(d.els['source-text'].innerHTML, /<a href="https:\/\/git\.example\.org\/me\/timer">https:\/\/git\.example\.org\/me\/timer<\/a>/);
+});
+
+test('without a source setting it links the bsTimer fork', () => {
+	for (const cfg of [{}, undefined]) {
+		const d = run(cfg);
+		assert.match(d.els['source-text'].innerHTML, new RegExp(`<a href="${FORK}">`));
+	}
+});
+
+test('only http(s) source links are used, and they are escaped', () => {
+	const d = run({ sourceUrl: 'javascript:alert(1)' });
+	assert.doesNotMatch(d.els['source-text'].innerHTML, /javascript:/);
+	assert.match(d.els['source-text'].innerHTML, new RegExp(`<a href="${FORK}">`));
+	const d2 = run({ sourceUrl: 'https://e.org/"><script>x</script>' });
+	assert.doesNotMatch(d2.els['source-text'].innerHTML, /<script/);
+});
+
+test('config.js lists sourceUrl with the fork as its default', () => {
+	const cfg = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'js', 'bstimer', 'config.js'), 'utf8');
+	assert.match(cfg, new RegExp(`'sourceUrl':\\s*'${FORK}'`));
 });

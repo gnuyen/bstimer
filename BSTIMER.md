@@ -86,6 +86,7 @@ var SITE_CONFIG = {
 | appleServicesId | your Sign in with Apple Services ID; empty (default) hides Sign in with Apple. | empty |
 | appleRedirectUri | the return URL registered for the Services ID; empty means `applelogin.php` next to the page. | empty |
 | siteOperator, privacyContact | Shown on `privacy.html`: who runs the site, and an email address or URL for privacy requests. | empty |
+| sourceUrl | Linked from `support.html` as where this site's source code is published (csTimer is GPL-3.0). Set your own if you modify the code. | `https://github.com/gnuyen/bstimer` |
 
 ### Server settings
 
