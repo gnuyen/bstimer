@@ -161,6 +161,17 @@ git switch bstimer && git merge master
 
 Conflicts are usually limited to the few files listed under "Changes from csTimer". Keep site-specific values out of the repository: they belong in `config.local.js`.
 
+### Before deploying a merge
+
+The bsTimer iOS app shows this site, so what a merge brings in has to pass App Store review too. `test/js/externalhosts.test.js` fails when a merge adds an outside host or a new network call, and lists them. Before adding them to the test and deploying, check what the merge adds against:
+
+- Payments and donations (guideline 3.1.1): no links or buttons to outside payment, tips or purchases. The app hides csTimer's donate button; anything new needs hiding the same way in the app's `bluetooth-shim.js`.
+- Ads, analytics and trackers (5.1.2): none. The app's privacy answers say it collects no data for tracking.
+- Seeing other people's content: chat, rooms, leaderboards or shared solves (1.2). Apple requires filtering, reporting and blocking. Leave such tools hidden, the way an empty `compServer` and `battleSocket` hide Online Competition and Online battle.
+- Sign-in: a new third-party sign-in also needs Sign in with Apple (4.8).
+- Data sent elsewhere: a new service the page sends data to must go into `privacy.html` and the app's App Privacy answers.
+- A large new feature changes what the app is; it should go through App Store review first, in a new app build (2.5.2).
+
 ## Notes on csTimer's own deployment
 
 - `dist/` is csTimer's built site for cstimer.net. Its `timer.php` includes `baidutongji.php`, which loads Baidu Analytics with cstimer.net's site id. `src/index.php` does not. If you host `dist/`, remove that include.
@@ -169,7 +180,7 @@ Conflicts are usually limited to the few files listed under "Changes from csTime
 
 ## Tests
 
-Unit tests: `node --test test/js/` (including the service worker, `sw.test.js`). PHP tests: `php test/php/<name>.test.php`.
+Unit tests: `node --test test/js/` (including the service worker, `sw.test.js`, and the merge check of outside hosts and network calls, `externalhosts.test.js`). PHP tests: `php test/php/<name>.test.php`.
 
 Browser tests live in `test/browser/` and run with safaridriver:
 - `sync_e2e.py` — the debug transport.
