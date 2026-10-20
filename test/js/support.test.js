@@ -143,3 +143,13 @@ test('config.js lists sourceUrl with the fork as its default', () => {
 	const cfg = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'js', 'bstimer', 'config.js'), 'utf8');
 	assert.match(cfg, new RegExp(`'sourceUrl':\\s*'${FORK}'`));
 });
+
+test("doesn't describe the app's Website switch, which the App Store build doesn't have", () => {
+	// cstimer-ios builds it only with CSTIMER_NET_OPTION, off until cs0x7f approves it.
+	assert.doesNotMatch(HTML, /Apps → bsTimer → Website|switch the app to csTimer\.net/);
+});
+
+test('the iCloud section covers iPad as well as iPhone', () => {
+	const icloud = HTML.split('id="icloud"')[1].split('<h2')[0];
+	assert.match(icloud, /iPad/);
+});
