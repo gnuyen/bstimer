@@ -1357,12 +1357,20 @@ var bsSync = execMain(function() {
 			}
 			$(function() {
 				schedule('load', 2000);
-				badge = syncBadge['attach'](document, function() {
-					updateBadge();
-					logohint.push(syncBadge['state'](badgeInfo())['text']);
-				});
-				updateBadge();
-				setInterval(updateBadge, 60000);
+				// syncbadge.js can be missing when a cached index.php predates it, and an error here
+				// would stop csTimer's other ready handlers.
+				if (typeof syncBadge !== 'undefined') {
+					try {
+						badge = syncBadge['attach'](document, function() {
+							updateBadge();
+							logohint.push(syncBadge['state'](badgeInfo())['text']);
+						});
+						updateBadge();
+						setInterval(updateBadge, 60000);
+					} catch (e) {
+						badge = null;
+					}
+				}
 			});
 
 			try {

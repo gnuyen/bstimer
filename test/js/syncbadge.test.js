@@ -182,3 +182,13 @@ test('sync.js attaches the badge, refreshes it with the UI and every minute, and
 	assert.match(info, /'configured': !!pickTransport\(\)/);
 	assert.match(info, /'paused': userPaused/);
 });
+
+test('sync.js still starts when syncbadge.js is missing (a cached index.php that predates it)', () => {
+	// The service worker can serve an old index.php with a new sync.js. An error in sync.js's ready
+	// handler stops jQuery's other ready handlers, and csTimer never shows the page.
+	const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'bstimer', 'sync.js'), 'utf8');
+	const at = src.indexOf("syncBadge['attach'](");
+	const before = src.slice(Math.max(0, at - 300), at);
+	assert.match(before, /typeof syncBadge !== 'undefined'/);
+	assert.match(before, /try \{/);
+});
