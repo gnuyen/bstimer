@@ -109,7 +109,9 @@ function navigate(event) {
 		if (id) fromCache.add(id);
 		return res;
 	};
-	const network = fetch(event.request).then(res => {
+	// no-cache: the server sends the page with max-age=600, and the browser's HTTP cache would
+	// otherwise answer with an old page while the assets below come fresh.
+	const network = fetch(event.request, { cache: 'no-cache' }).then(res => {
 		if (cacheable(res)) {
 			return put(PAGE, res.clone()).then(() => res);
 		}

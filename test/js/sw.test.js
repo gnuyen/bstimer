@@ -188,6 +188,17 @@ test('navigation is network-first and refreshes the cached page', async () => {
 	assert.equal(await cached(sw, SCOPE), 'new page');
 });
 
+test('navigation revalidates the page with the server, not the browser HTTP cache', async () => {
+	// The server sends the page with max-age=600. Without no-cache, Safari answered the page from
+	// its HTTP cache for up to 10 minutes after a deploy while scripts came fresh: an old page with
+	// new scripts (2026-10-21, it left the app blank).
+	const sw = load({ [SCOPE]: 'new page' });
+	const { waits } = await sw.dispatchFetch(nav(SCOPE));
+	await Promise.all(waits);
+	const call = sw.fetchCalls.find((c) => c.url === SCOPE);
+	assert.equal(call.init && call.init.cache, 'no-cache');
+});
+
 test('navigation with a query string or index.php is stored as the page', async () => {
 	const sw = load({ [SCOPE + '?t=1']: 'page q', [SCOPE + 'index.php?lang=de-de']: 'page de' });
 	let r = await sw.dispatchFetch(nav(SCOPE + '?t=1'));
