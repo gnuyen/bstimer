@@ -33,6 +33,7 @@ bstimer/syncdata.js \
 bstimer/syncengine.js \
 bstimer/synctransport.js \
 bstimer/syncicloud.js \
+bstimer/syncbadge.js \
 bstimer/sync.js \
 logohint.js \
 bstimer/appupdate.js \

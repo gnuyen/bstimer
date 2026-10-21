@@ -18,6 +18,7 @@ bsTimer is csTimer with a few changes that are useful when you host it yourself 
 - Sync between devices: the Export dialog has a "Sync" section (`src/js/bstimer/sync*.js`, `src/sync.php`). It keeps sessions and solves in step across the devices that share a sync code.
 - `src/js/bstimer/keepawake.js`: re-requests the screen wake lock when a timer starts. It works in an installed web app, where the page's own wake lock is not enough.
 - `src/js/bstimer/syncicloud.js`: syncs to the user's iCloud when the page runs inside the bsTimer iOS app.
+- `src/js/bstimer/syncbadge.js`: the small sync status dot on the logo (green synced, blue syncing, red failed, amber paused, hollow off or not yet synced). Tapping it shows the details.
 - `src/applelogin.php`: receives Sign in with Apple's reply and passes it to the page in the URL fragment.
 
 ## Sync

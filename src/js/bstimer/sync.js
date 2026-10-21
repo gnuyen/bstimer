@@ -591,6 +591,21 @@ var bsSync = execMain(function() {
 		if (syncSection) {
 			renderSync();
 		}
+		updateBadge();
+	}
+
+	// The status dot on the logo (syncbadge.js).
+	var badge = null;
+
+	function badgeInfo() {
+		return { 'configured': !!pickTransport(), 'autosync': prefs['autosync'], 'paused': userPaused, 'syncing': syncing,
+			'lastSync': prefs['lastSync'], 'lastError': prefs['lastError'], 'now': Date.now() };
+	}
+
+	function updateBadge() {
+		if (badge) {
+			badge['update'](badgeInfo());
+		}
 	}
 
 	function groupCode(code) {
@@ -1342,6 +1357,12 @@ var bsSync = execMain(function() {
 			}
 			$(function() {
 				schedule('load', 2000);
+				badge = syncBadge['attach'](document, function() {
+					updateBadge();
+					logohint.push(syncBadge['state'](badgeInfo())['text']);
+				});
+				updateBadge();
+				setInterval(updateBadge, 60000);
 			});
 
 			try {
