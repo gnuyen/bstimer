@@ -406,7 +406,8 @@ var bsSync = execMain(function() {
 		});
 	}
 
-	function confirmDeletion(info) {
+	// 'combine' keeps everything (a union with the synced copy), true deletes, false pauses sync.
+	function confirmDeletion(info, label) {
 		var parts = [];
 		if (info['localSolvesRemoved']) {
 			parts.push(info['localSolvesRemoved'] + ' solves on this device');
@@ -420,7 +421,11 @@ var bsSync = execMain(function() {
 		if (info['cloudSessionsRemoved']) {
 			parts.push(info['cloudSessionsRemoved'] + ' session' + (info['cloudSessionsRemoved'] === 1 ? '' : 's') + ' in the synced copy');
 		}
-		return confirm('bsTimer sync would delete ' + parts.join(', ') + '.\n\nOK: continue.\nCancel: pause sync and keep everything.');
+		var what = 'bsTimer sync' + (label ? ' (' + label + ')' : '') + ' would delete ' + parts.join(', ') + '.';
+		if (confirm(what + "\n\nOK: keep everything, and combine this device's data with the synced copy (recommended).\nCancel: more options.")) {
+			return 'combine';
+		}
+		return confirm(what + '\n\nDelete them?\n\nOK: delete.\nCancel: pause sync and keep everything.');
 	}
 
 	function backupLocal(d) {
@@ -476,11 +481,11 @@ var bsSync = execMain(function() {
 			'confirmImport': confirmImport,
 			'confirmDeletion': function(info) {
 				if (run['deletionOk']) {
-					return true;
+					return run['deletionOk'];
 				}
-				var ok = confirmDeletion(info);
+				var ok = confirmDeletion(info, transports[name]['label']);
 				if (ok) {
-					run['deletionOk'] = true;
+					run['deletionOk'] = ok;
 				}
 				return ok;
 			},
@@ -1128,7 +1133,7 @@ var bsSync = execMain(function() {
 				}
 				if (r['status'] === 'ok' && r['applied']) {
 					var rest = names.slice(i);
-					prefs['followUp'] = rest.length ? { 'names': rest, 'strategy': follow, 'deletionOk': !!run['deletionOk'] } : null;
+					prefs['followUp'] = rest.length ? { 'names': rest, 'strategy': follow, 'deletionOk': run['deletionOk'] || false } : null;
 					return results;
 				}
 				return next();
@@ -1192,7 +1197,7 @@ var bsSync = execMain(function() {
 			if (fu && !strategy && !first) {
 				// finish the run that an apply interrupted
 				run['follow'] = fu['strategy'];
-				run['deletionOk'] = !!fu['deletionOk'];
+				run['deletionOk'] = fu['deletionOk'] || false;
 				var rest = [];
 				var j;
 				for (j = 0; j < fu['names'].length; j++) {

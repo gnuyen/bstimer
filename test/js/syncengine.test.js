@@ -311,6 +311,56 @@ test('deletion guard: removing a whole session always asks, and counts solves re
 	assert.equal(infoB.localSolvesRemoved, 2);
 });
 
+// The synced copy no longer descends from this device's last sync (another iCloud environment,
+// a record recreated by another device): the three-way merge reads everything missing from it
+// as deleted there.
+async function unrelatedCloud() {
+	const cl = cloud();
+	const dev = device([{ name: 'A', solves: many(50, 100) }, { name: 'B', solves: many(20, 500) }]);
+	await sync(dev, cl);
+	const other = cloud();
+	await sync(device([{ name: 'C', solves: many(5, 900) }]), other);
+	cl.data = other.data;
+	cl.tag++;
+	return { cl, dev };
+}
+const total = (snap) => Object.values(snap.sessions).reduce((n, s) => n + s.solves.length, 0);
+
+test("deletion guard: 'combine' keeps everything on both sides", async () => {
+	const { cl, dev } = await unrelatedCloud();
+	let asked = 0, info = null;
+	const r = await sync(dev, cl, { settings: 'off' }, { confirmDeletion: (i) => { asked++; info = i; return Promise.resolve('combine'); } });
+	assert.equal(asked, 1, 'asked once');
+	assert.equal(info.localSessionsRemoved, 2);
+	assert.equal(info.localSolvesRemoved, 70);
+	assert.equal(r.status, 'ok');
+	assert.deepEqual(Object.values(cl.data.sessions).map((s) => s.meta.name).sort(), ['A', 'B', 'C']);
+	assert.equal(total(cl.data), 75, 'the synced copy gets this device\'s solves');
+	assert.deepEqual(names(dev).sort(), ['A', 'B', 'C']);
+	assert.equal(Object.values(dev.exportObj).reduce((n, l) => n + l.length, 0), 75, 'and this device keeps its own');
+});
+
+test("deletion guard: after 'combine' the next sync is quiet", async () => {
+	const { cl, dev } = await unrelatedCloud();
+	await sync(dev, cl, { settings: 'off' }, { confirmDeletion: () => Promise.resolve('combine') });
+	let asked = 0;
+	const r = await sync(dev, cl, { settings: 'off' }, { confirmDeletion: () => { asked++; return Promise.resolve(false); } });
+	assert.equal(asked, 0);
+	assert.equal(r.status, 'ok');
+	assert.equal(r.pushed, false);
+	assert.equal(r.applied, false);
+});
+
+test('deletion guard: declining an unrelated synced copy changes nothing', async () => {
+	const { cl, dev } = await unrelatedCloud();
+	const cloudBefore = plain(cl.data), stateBefore = plain(dev.state), localBefore = plain(dev.exportObj);
+	const r = await sync(dev, cl, { settings: 'off' }, { confirmDeletion: () => Promise.resolve(false) });
+	assert.equal(r.status, 'paused');
+	assert.deepEqual(cl.data, cloudBefore);
+	assert.deepEqual(dev.state, stateBefore);
+	assert.deepEqual(dev.exportObj, localBefore);
+});
+
 test('local data is backed up before every apply', async () => {
 	const cl = cloud();
 	await sync(device([{ name: 'A', solves: [solve(1)] }]), cl);

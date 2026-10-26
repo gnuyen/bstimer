@@ -197,7 +197,11 @@ storage.exportAll().then(function(o){ o["session" + idx] = o["session" + idx].sl
         time.sleep(0.5)
     txt = alert_text() or ''
     check('deletion guard asks before deleting solves from the synced copy', 'would delete' in txt and 'solves' in txt, txt)
-    wd('POST', S + '/alert/dismiss', {})
+    wd('POST', S + '/alert/dismiss', {})  # Cancel: more options
+    end = time.time() + 10
+    while time.time() < end and not alert_text():
+        time.sleep(0.3)
+    wd('POST', S + '/alert/dismiss', {})  # Cancel: pause sync and keep everything
     time.sleep(2)
     versions = json.loads(js_async('bsSync.transports.server.versions().then(function(v){ done(JSON.stringify(v)); });'))
     check('nothing was uploaded after declining', versions and versions[0]['version'] == head_before, (head_before, versions))

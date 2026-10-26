@@ -50,7 +50,7 @@ var syncEngine = (function() {
 	// one sync round
 	function syncNow(deps, opts) {
 		var mode = opts['settings'];
-		var state, base, local, link, strategy, choice, localSnap, merged, conflicts, retries, pushed, needApply, localProps;
+		var state, base, local, link, strategy, choice, localSnap, merged, conflicts, retries, pushed, needApply, localProps, combined;
 		var run = function() {
 			// 1. load state and base
 			return p(deps['loadState']()).then(function(st) {
@@ -91,6 +91,7 @@ var syncEngine = (function() {
 				localProps = local['properties'];
 				// 5. retry loop
 				retries = 0;
+				combined = false;
 				pushed = false;
 				// upload(attemptNo) only does: get, merge, and put if needed.
 				// Resolves to { merged, localSnap, remoteSnap } on success,
@@ -127,7 +128,7 @@ var syncEngine = (function() {
 							merged['properties'] = props;
 						}
 						// deletion guard (merge strategy only), evaluated before any put
-						if (strategy === 'merge') {
+						if (strategy === 'merge' && !combined) {
 							var lS = localSnap['sessions'] || {};
 							var mS = merged['sessions'] || {};
 							var rS = (remoteSnap ? remoteSnap['sessions'] : {}) || {};
@@ -155,6 +156,12 @@ var syncEngine = (function() {
 								var ok = confirm ? confirm(info) : true;
 								return p(ok).then(function(o) {
 									if (!o) { return { 'declined': true }; }
+									if (o === 'combine') {
+										// keep everything: merge again with no base, a union that never deletes
+										base = null;
+										combined = true;
+										return upload(attemptNo);
+									}
 									return doPut(remote, remoteSnap);
 								});
 							}

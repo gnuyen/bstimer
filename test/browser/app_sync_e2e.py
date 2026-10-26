@@ -292,6 +292,11 @@ storage.exportAll().then(function(o){ o["session" + idx] = o["session" + idx].sl
         time.sleep(0.5)
     txt = alert_text() or ''
     check('deletion guard asks', 'would delete' in txt, txt)
+    wd('POST', S + '/alert/dismiss', {})  # Cancel: more options (OK would combine)
+    end = time.time() + 10
+    while time.time() < end and not alert_text():
+        time.sleep(0.3)
+    check('then asks whether to delete', 'OK: delete' in (alert_text() or ''), alert_text())
     wd('POST', S + '/alert/accept', {})
     count = 0
     end = time.time() + 20
