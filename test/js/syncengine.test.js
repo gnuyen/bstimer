@@ -351,6 +351,20 @@ test("deletion guard: after 'combine' the next sync is quiet", async () => {
 	assert.equal(r.applied, false);
 });
 
+test("deletion guard: 'combine' keeps this device's settings (it is not a new device joining)", async () => {
+	const cl = cloud();
+	const dev = device([{ name: 'A', solves: many(50, 100) }], { useMilli: true });
+	await sync(dev, cl, { settings: 'settings' });
+	const other = cloud();
+	await sync(device([{ name: 'C', solves: many(5, 900) }], { useMilli: false }), other, { settings: 'settings' });
+	cl.data = other.data;
+	cl.tag++;
+	const r = await sync(dev, cl, { settings: 'settings' }, { confirmDeletion: () => Promise.resolve('combine') });
+	assert.equal(r.status, 'ok');
+	assert.equal(dev.properties.useMilli, true, 'kept on this device');
+	assert.equal(cl.data.properties.useMilli, true, 'and the synced copy gets it');
+});
+
 test('deletion guard: declining an unrelated synced copy changes nothing', async () => {
 	const { cl, dev } = await unrelatedCloud();
 	const cloudBefore = plain(cl.data), stateBefore = plain(dev.state), localBefore = plain(dev.exportObj);

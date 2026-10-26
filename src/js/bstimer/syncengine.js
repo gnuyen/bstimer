@@ -117,8 +117,9 @@ var syncEngine = (function() {
 							merged['properties'] = clone((remoteSnap ? remoteSnap['properties'] : (base ? base['properties'] : {})) || {});
 						}
 						// fresh join with settings on: take the cloud's shared settings,
-						// overlaid on top of the local ones (device-local keys stay local)
-						if (base === null && mode === 'settings' && remoteSnap !== null) {
+						// overlaid on top of the local ones (device-local keys stay local); not when
+						// combining, where this device's settings win
+						if (base === null && !combined && mode === 'settings' && remoteSnap !== null) {
 							var props = clone(localSnap['properties'] || {});
 							var rp = remoteSnap['properties'] || {};
 							var k;
