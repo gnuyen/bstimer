@@ -1072,9 +1072,17 @@ var bsSync = execMain(function() {
 		$div.append($status);
 
 		syncSection.append(cells($div));
-		syncSection.append($('<div class="bsSyncPrivacy">').append(
-			$('<a target="_blank">').attr('href', 'support.html').text('Help'), ' · ',
-			$('<a target="_blank">').attr('href', 'privacy.html').text('Privacy')));
+		// The site's own help and privacy pages, when its settings name them
+		var $pages = $('<div class="bsSyncPrivacy">');
+		if (siteConfig['supportUrl']) {
+			$pages.append($('<a target="_blank">').attr('href', siteConfig['supportUrl']).text('Help'));
+		}
+		if (siteConfig['privacyUrl']) {
+			$pages.append($pages.children().length ? ' · ' : '', $('<a target="_blank">').attr('href', siteConfig['privacyUrl']).text('Privacy'));
+		}
+		if ($pages.children().length) {
+			syncSection.append($pages);
+		}
 
 		ui['status'] = $status;
 		ui['autosync'] = $autosyncCb;

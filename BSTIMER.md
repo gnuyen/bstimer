@@ -12,7 +12,7 @@ bsTimer is csTimer with a few changes that are useful when you host it yourself 
 - Offline support: `src/sw.js` is a working service worker. The page loads from the network when it can and from a cached copy when offline or slow (4 s). Scripts and styles follow the page: when it came from the network they are revalidated as well, so a deploy shows up on the next load with no mix of old and new files.
 - `src/js/bstimer/app-auth.js`: hands Google sign-in back to the bsTimer iOS app. It only acts when the sign-in's `state` ends in `.cstimer-ios`, a marker only the app adds.
 - Sign-in state check (`export.js`): the WCA and Google sign-in links carry a random `state`, kept per tab in sessionStorage, and a sign-in result that comes back without it is ignored. This stops another site from signing you in to its own account (login CSRF).
-- Privacy page: `src/privacy.html` describes what the site stores. It names the operator and contact from `siteOperator` and `privacyContact`, and the Sync section links to it.
+- Help and privacy pages: each site writes its own (they describe that site and its operator). The Sync section links them from the `supportUrl` and `privacyUrl` settings.
 - Rate limits: `src/ratelimit.php` limits requests per client for sync and `userdata2.php`, keyed by a salted hash of the IP address.
 - `src/userdata2.php`: the export/import-to-server backend, with prepared statements, validated ids, content-checked write-once slices, size limits and no cross-origin access. Settings come from the server settings file.
 - Sync between devices: the Export dialog has a "Sync" section (`src/js/bstimer/sync*.js`, `src/sync.php`). It keeps sessions and solves in step across the devices that share a sync code.
@@ -86,8 +86,7 @@ var SITE_CONFIG = {
 | latestAppRevision | Newest bsTimer iOS app revision; older apps get an update hint. 0 turns the check off. | `0` |
 | appleServicesId | your Sign in with Apple Services ID; empty (default) hides Sign in with Apple. | empty |
 | appleRedirectUri | the return URL registered for the Services ID; empty means `applelogin.php` next to the page. | empty |
-| siteOperator, privacyContact | Shown on `privacy.html`: who runs the site, and an email address or URL for privacy requests. | empty |
-| sourceUrl | Linked from `support.html` as where this site's source code is published (csTimer is GPL-3.0). Set your own if you modify the code. | `https://github.com/gnuyen/bstimer` |
+| supportUrl, privacyUrl | Your site's help and privacy pages, linked under the Sync section; empty hides each link. A public site that syncs should have a privacy page saying what it stores, and (csTimer being GPL-3.0) say where its modified source is published. | empty |
 
 ### Server settings
 
@@ -170,7 +169,7 @@ The bsTimer iOS app shows this site, so what a merge brings in has to pass App S
 - Ads, analytics and trackers (5.1.2): none. The app's privacy answers say it collects no data for tracking.
 - Seeing other people's content: chat, rooms, leaderboards or shared solves (1.2). Apple requires filtering, reporting and blocking. Leave such tools hidden, the way an empty `compServer` and `battleSocket` hide Online Competition and Online battle.
 - Sign-in: a new third-party sign-in also needs Sign in with Apple (4.8).
-- Data sent elsewhere: a new service the page sends data to must go into `privacy.html` and the app's App Privacy answers.
+- Data sent elsewhere: a new service the page sends data to must go into the site's privacy page and the app's App Privacy answers.
 - A large new feature changes what the app is; it should go through App Store review first, in a new app build (2.5.2).
 
 ## Notes on csTimer's own deployment

@@ -206,7 +206,7 @@ try:
     check('web server copy exists', server({'action': 'head', 'code': code})['version'] >= 1,
           server({'action': 'head', 'code': code}))
     links = js('return $(".bsSyncPrivacy a").map(function(){ return $(this).attr("href"); }).get()')
-    check('the Sync section links the help and privacy pages', links == ['support.html', 'privacy.html'], links)
+    check('the Sync section links the help and privacy pages from the settings', links == ['help.html', 'policy.html'], links)
     click_link('Delete synced data…')
     texts = accept_alerts(20)
     check('web delete confirms and reports',

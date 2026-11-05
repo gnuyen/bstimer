@@ -57,7 +57,7 @@ if ($path === '/oauthhits') {
 
 if ($path === '/js/bstimer/config.local.js') {
 	header('Content-Type: application/javascript');
-	echo "var SITE_CONFIG = {'syncServer': 'sync.php', 'compServer': '', 'battleSocket': ''};\n";
+	echo "var SITE_CONFIG = {'syncServer': 'sync.php', 'compServer': '', 'battleSocket': '', 'supportUrl': 'help.html', 'privacyUrl': 'policy.html'};\n";
 	$port = (int)($_SERVER['SERVER_PORT'] ?? 0);
 	$host = $_SERVER['HTTP_HOST'] ?? '';
 	if (substr($host, -5) !== ':8082') {

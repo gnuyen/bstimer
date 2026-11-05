@@ -37,13 +37,9 @@ var siteConfig = (function() {
 		'appleRedirectUri': '',
 		// The name shown in the logo button.
 		'siteName': 'csTimer',
-		// Shown on privacy.html: who runs this site, and an email address or URL for privacy
-		// requests. Also linked from the Sync section when set.
-		'siteOperator': '',
-		'privacyContact': '',
-		// Where this site's source code is published (support.html links it; csTimer is GPL-3.0,
-		// so a modified copy should say where its source is). Change it if you modify the code.
-		'sourceUrl': 'https://github.com/gnuyen/bstimer',
+		// This site's help and privacy pages, linked under the Sync section. Empty hides each link.
+		'supportUrl': '',
+		'privacyUrl': '',
 		// Newest bsTimer iOS app revision. When the app (user agent "bsTimer/<n>") is older,
 		// the page shows a short notice. 0 turns the check off.
 		'latestAppRevision': 0
