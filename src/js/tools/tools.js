@@ -52,9 +52,9 @@ var tools = (function() {
 	}
 
 	function puzzleType(scrambleType) {
-		if (/^222(so|[236o]|eg[012]?|tc[np]?|lsall|nb)$/.exec(scrambleType)) {
+		if (/^222(so|[236o]|eg[012]?|tc[np]?|lsall|nb|easy)$/.exec(scrambleType)) {
 			return "222";
-		} else if (/^(333(oh?|ni|f[mt]|drud|custom)?|(z[zb]|[coep]|c[om]|2g|ls|tt)?ll|lse(mu)?|2genl?|3gen_[LF]|edges|corners|f2l|lsll2|(zb|w?v|eo)ls|roux|RrU|half|easyx?c|eoline|eocross|sbrx|mt(3qb|eole|tdr|6cp|l5ep|cdrll)|nocache_333(bld|pat)spec)$/.exec(scrambleType)) {
+		} else if (/^(333(oh?|ni|f[mt]|drud|custom)?|(z[zb]|[coep]|c[om]|2g|ls|tt)?ll|zbllx2|lse(mu)?|2genl?|3gen_[LF]|edges|corners|f2l|lsll2|(zb|w?v|eo)ls|roux|RrU|half|easyx?c|eoline|eocross|sbrx|mt(3qb|eole|tdr|6cp|l5ep|cdrll)|nocache_333(bld|pat)spec)$/.exec(scrambleType)) {
 			return "333";
 		} else if (/^(444([mo]|wca|yj|bld|ctud|ctrl|ud3c|l8e|rlda|rlca|edo|cto|e?ll|p[op]ll)?|4edge|RrUu)$/.exec(scrambleType)) {
 			return "444";
@@ -66,7 +66,7 @@ var tools = (function() {
 			return "777";
 		} else if (/^pyr(s?[om]|l4e|nb|4c)$/.exec(scrambleType)) {
 			return "pyr";
-		} else if (/^skb(s?o|nb)?$/.exec(scrambleType)) {
+		} else if (/^skb(s?o|nb|ll)?$/.exec(scrambleType)) {
 			return "skb";
 		} else if (/^sq(rs|1pll|1[ht]|rcsp)$/.exec(scrambleType)) {
 			return "sq1";
@@ -339,7 +339,7 @@ var tools = (function() {
 	}) : {};
 
 	var lastTrain = null;
-	var trainScrambleRe = /^((z[zb]|[coep]|c[om]|2g|ls|tt)?ll|lse(mu)?|2genl?|3gen_[LF]|333drud|f2l|lsll2|(zb|w?v|eo)ls|roux|eoline|eocross|sbrx|mt(3qb|eole|tdr|6cp|l5ep|cdrll)|222(eg[012]?|tc[np]?|lsall)|444(p[op]ll|l8e))$/;
+	var trainScrambleRe = /^((z[zb]|[coep]|c[om]|2g|ls|tt)?ll|zbllx2|lse(mu)?|2genl?|3gen_[LF]|333drud|f2l|lsll2|(zb|w?v|eo)ls|roux|eoline|eocross|sbrx|mt(3qb|eole|tdr|6cp|l5ep|cdrll)|222(eg[012]?|tc[np]?|lsall)|444(p[op]ll|l8e))$/;
 
 	function isCurTrainScramble(scramble) {
 		return !!trainScrambleRe.exec((scramble || curScramble || [])[0]);

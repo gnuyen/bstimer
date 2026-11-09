@@ -87,7 +87,7 @@ var mathlib = (function() {
 				arr[i] = idx % (n - i);
 				prt ^= arr[i];
 				idx = ~~(idx / (n - i));
-				for (var j = i + 1; j < n; j--) {
+				for (var j = i + 1; j < n; j++) {
 					arr[j] >= arr[i] && arr[j]++;
 				}
 			}
@@ -1034,7 +1034,7 @@ var mathlib = (function() {
 	}
 
 	_.search = function(state, minl, MAXL) {
-		MAXL = (MAXL || 99) + 1;
+		MAXL = MAXL || 99;
 		if (!this.inited) {
 			this.init();
 		}

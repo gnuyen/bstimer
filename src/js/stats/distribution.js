@@ -20,21 +20,25 @@ var distribution = execMain(function(kpretty) {
 			diff = data[2];
 		max = ~~(max / diff);
 		min = ~~(min / diff);
+		var base = stats.getTimesAgg().getDistribution();
 		var dis = {};
 		var keep = {};
 		var cntmax = 0;
-		keep[max + 1] = 0;
-		for (var i = 0; i < timesLen; i++) {
-			var value = times_stats_list.timeAt(i);
-			if (value != -1) {
-				var cur = ~~(value / diff);
-				dis[cur] = (dis[cur] || 0) + 1;
-				cntmax = Math.max(dis[cur], cntmax);
-				keep[cur] = i + 1;
-			} else {
-				keep[max + 1] = i + 1;
+		var key;
+		var unit = diff / base.unit;
+		for (key in base.cnt) {
+			var rd = ~~(key / unit);
+			var cnt = (dis[rd] || 0) + base.cnt[key];
+			dis[rd] = cnt;
+			if (cnt > cntmax) {
+				cntmax = cnt;
+			}
+			var lk = base.last[key] + 1;
+			if (!(keep[rd] >= lk)) {
+				keep[rd] = lk;
 			}
 		}
+		keep[max + 1] = (base.last[-1] === undefined) ? 0 : base.last[-1] + 1;
 		for (var i = max; i > min; i--) {
 			keep[i] = Math.max(keep[i + 1], keep[i] || 0);
 		}
@@ -43,10 +47,13 @@ var distribution = execMain(function(kpretty) {
 		var pattern = diff >= 1000 ? /[^\.]+(?=\.)/ : /[^\.]+\.[\d]/;
 		var lablen = kpretty(max * diff).match(pattern)[0].length;
 		for (var i = min; i <= max; i++) {
-			var label = kpretty(i * diff).match(pattern)[0];
-			var label2 = kpretty((i + 1) * diff).match(pattern)[0];
 			dis[i] = dis[i] || 0;
 			cumDis += dis[i];
+			if (!dis[i]) {
+				continue;
+			}
+			var label = kpretty(i * diff).match(pattern)[0];
+			var label2 = kpretty((i + 1) * diff).match(pattern)[0];
 			label = mathlib.valuedArray(lablen - label.length, '&nbsp;').join('') + label;
 			label2 = mathlib.valuedArray(lablen - label2.length, '&nbsp;').join('') + label2;
 			str.push('<tr><td>' + label + '+</td><td><span class="cntbar" style="width: ' + dis[i] / cntmax * 5 + 'em;">' + dis[i] + '</span></td><td>&nbsp;&lt;' + label2 + '</td><td><span class="cntbar" style="width: ' + cumDis / timesLen * 5 + 'em; white-space: nowrap;">' + (timesLen - keep[i + 1]) + '/' + cumDis + '</span></td></tr>');

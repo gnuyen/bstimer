@@ -5,6 +5,7 @@ execMain(function(timer) {
 	var moveCnt = 0;
 	var totPhases = 1;
 	var rawMoves = [];
+	var puncCode = {Semicolon: 186, Comma: 188, Period: 190, Slash: 191};
 
 	//mstep: 0 move start, 1 move doing, 2 move finish
 	function moveListener(move, mstep, ts) {
@@ -133,7 +134,7 @@ execMain(function(timer) {
 		];
 	}
 
-	function onkeydown(keyCode) {
+	function onkeydown(keyCode, e) {
 		if (puzzleObj == undefined) {
 			return;
 		}
@@ -167,11 +168,12 @@ execMain(function(timer) {
 					kernel.pushSignal('time', ["", 0, [-1, now - timer.startTime()], 0, [$.map(rawMoves, cubeutil.moveSeq2str).filter($.trim).join(' '), curPuzzle, moveCnt]]);
 				}
 			} else {
-				var mappedCode = help.getMappedCode(keyCode);
-				var a = {
-					"keyCode": mappedCode
-				};
-				puzzleObj.keydown(a);
+				var origEvent = e && (e.originalEvent || e);
+				var code = origEvent && origEvent.code;
+				var m = /^(?:Key([A-Z])|Digit(\d))$/.exec(code || '');
+				var useCode = kernel.getProp('vrcKBL') == 'qwerty';
+				var mappedCode = useCode ? (m ? (m[1] || m[2]).charCodeAt(0) : puncCode[code]) : null;
+				puzzleObj.keydown({"keyCode": mappedCode || help.getMappedCode(keyCode)});
 			}
 		}
 		if (keyCode == 27 || keyCode == 32) {

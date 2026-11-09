@@ -19,7 +19,11 @@ function loadDriver() {
 		kernel: { getProp: (k, d) => d },
 		confirm: () => false,
 		giikerutil: { log() {}, markSolved() {}, updateBattery() {} },
-		GiikerCube: { regCubeModel() {}, callback: (facelet, prevMoves) => calls.push([facelet, prevMoves.slice()]), onDisconnect() {} },
+		GiikerCube: {
+			regCubeModel() {}, callback: (facelet, prevMoves) => calls.push([facelet, prevMoves.slice()]), onDisconnect() {},
+			// bluetooth.js's helper (the tests use an unencrypted cube, so no AES codec)
+			dataViewToBytes: (v) => Array.from({ length: v.byteLength }, (_, i) => v.getUint8(i)),
+		},
 	};
 	vm.createContext(ctx);
 	for (const f of ['lib/isaac.js', 'lib/mathlib.js', 'hardware/gancube.js']) vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f });
