@@ -163,10 +163,10 @@ Conflicts are usually limited to the few files listed under "Changes from csTime
 
 ### Before deploying a merge
 
-The bsTimer iOS app shows this site, so what a merge brings in has to pass App Store review too. `test/js/externalhosts.test.js` fails when a merge adds an outside host or a new network call, and lists them. Before adding them to the test and deploying, check what the merge adds against:
+If an App Store app shows your site (as the bsTimer iOS app does), what a merge brings in has to pass App Store review too. `test/js/externalhosts.test.js` fails when a merge adds an outside host or a new network call, and lists them. Before adding them to the test and deploying, check what the merge adds against:
 
-- Payments and donations (guideline 3.1.1): no links or buttons to outside payment, tips or purchases. The app hides csTimer's donate button; anything new needs hiding the same way in the app's `bluetooth-shim.js`.
-- Ads, analytics and trackers (5.1.2): none. The app's privacy answers say it collects no data for tracking.
+- Payments and donations (guideline 3.1.1): no links or buttons to outside payment, tips or purchases. The bsTimer app hides csTimer's donate button; anything new needs hiding the same way in its `bluetooth-shim.js`.
+- Ads, analytics and trackers (5.1.2): none, unless the app's App Privacy answers declare them.
 - Seeing other people's content: chat, rooms, leaderboards or shared solves (1.2). Apple requires filtering, reporting and blocking. Leave such tools hidden, the way an empty `compServer` and `battleSocket` hide Online Competition and Online battle.
 - Sign-in: a new third-party sign-in also needs Sign in with Apple (4.8).
 - Data sent elsewhere: a new service the page sends data to must go into the site's privacy page and the app's App Privacy answers.
@@ -188,4 +188,4 @@ Browser tests live in `test/browser/` and run with safaridriver:
 - `app_sync_e2e.py` — two app devices with a fake iCloud bridge from `test/browser/app_router.php`, plus a web device.
 - `account_e2e.py` — the sign-in state check, and deleting synced data on the web and in the app (same router).
 
-Warn: the browser tests erase the site data of the origin they run on, so only point them at a local test server.
+Warning: the browser tests erase the site data of the origin they run on, so only point them at a local test server.
